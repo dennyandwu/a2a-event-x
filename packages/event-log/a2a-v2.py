@@ -25,7 +25,22 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import a2a_v2_store as store
 
-A2A_V1 = os.path.expanduser("~/.openclaw/scripts/a2a-log.py")
+# Prefer monorepo toolkit path; fall back to legacy live path / env override
+_A2A_DIR = os.path.dirname(os.path.abspath(__file__))
+A2A_V1 = os.environ.get(
+    "A2A_LOG_CLI",
+    next(
+        (
+            p
+            for p in (
+                os.path.join(_A2A_DIR, "scripts", "a2a-log.py"),
+                os.path.expanduser("~/.openclaw/scripts/a2a-log.py"),
+            )
+            if os.path.isfile(p)
+        ),
+        os.path.join(_A2A_DIR, "scripts", "a2a-log.py"),
+    ),
+)
 MAX_ATTEMPTS = 3
 
 

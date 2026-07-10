@@ -1,0 +1,122 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-04-03T17:20:00+08:00",
+  "notes": [
+    "For a single dispatch, the resolved sessionKey is the technical routing source of truth",
+    "canonical/home_session_key is the agent default home inbox, not the mandatory return target for all work",
+    "When work starts in a channel/thread, result delivery should normally return to that same context",
+    "display_label must describe the real resolved sessionKey target",
+    "thread labels may only be used when the sessionKey itself targets that thread"
+  ],
+  "agents": {
+    "issac": {
+      "agent_alias": "issac",
+      "display_name": "Issac",
+      "openclaw_agent_id": "main",
+      "account_id": "default",
+      "canonical_session_key": "agent:main:discord:channel:993271843777691700",
+      "home_session_key": "agent:main:discord:channel:993271843777691700",
+      "primary_channel_alias": "ceo",
+      "primary_channel_id": "993271843777691700",
+      "display_label": "Issac @ PMO主频道",
+      "display_label_short": "Issac @ #1700 urdao-ceo",
+      "bot_user_id": "1475889572327194755",
+      "session_store_path": "/Users/0xfg_bot/.openclaw/agents/main/sessions/sessions.json",
+      "workspace": "/Users/0xfg_bot/.openclaw/workspace"
+    },
+    "satoshi": {
+      "agent_alias": "satoshi",
+      "display_name": "Satoshi",
+      "openclaw_agent_id": "satoshi",
+      "account_id": "satoshi",
+      "canonical_session_key": "agent:satoshi:discord:channel:993272794034999397",
+      "home_session_key": "agent:satoshi:discord:channel:993272794034999397",
+      "primary_channel_alias": "dev",
+      "primary_channel_id": "993272794034999397",
+      "display_label": "Satoshi @ 开发主频道",
+      "display_label_short": "Satoshi @ #9397 dev",
+      "bot_user_id": "1477316533821640929",
+      "session_store_path": "/Users/0xfg_bot/.openclaw/agents/satoshi/sessions/sessions.json",
+      "workspace": "/Users/0xfg_bot/.openclaw/workspace-satoshi"
+    },
+    "elon": {
+      "agent_alias": "elon",
+      "display_name": "Elon",
+      "openclaw_agent_id": "elon",
+      "account_id": "elon",
+      "canonical_session_key": "agent:elon:discord:channel:1476890694261014701",
+      "home_session_key": "agent:elon:discord:channel:1476890694261014701",
+      "primary_channel_alias": "research",
+      "primary_channel_id": "1476890694261014701",
+      "display_label": "Elon @ 研究主频道",
+      "display_label_short": "Elon @ #4701 research",
+      "bot_user_id": "1477362015369560354",
+      "session_store_path": "/Users/0xfg_bot/.openclaw/agents/elon/sessions/sessions.json",
+      "workspace": "/Users/0xfg_bot/.openclaw/workspace-elon"
+    },
+    "ansen": {
+      "agent_alias": "ansen",
+      "display_name": "Ansen",
+      "openclaw_agent_id": "ansen",
+      "account_id": "ansen",
+      "canonical_session_key": "agent:ansen:discord:channel:1476901866884567131",
+      "home_session_key": "agent:ansen:discord:channel:1476901866884567131",
+      "primary_channel_alias": "ops",
+      "primary_channel_id": "1476901866884567131",
+      "display_label": "Ansen @ 运维主频道",
+      "display_label_short": "Ansen @ #7131 ops",
+      "bot_user_id": "1476909154215006360",
+      "session_store_path": "/Users/0xfg_bot/.openclaw/agents/ansen/sessions/sessions.json",
+      "workspace": "/Users/0xfg_bot/.openclaw/workspace-ansen"
+    }
+  },
+  "channels": {
+    "a2a_sync": {
+      "id": "1477264532954026086",
+      "label": "A2A Sync"
+    },
+    "pmo_patrol": {
+      "id": "1483694135151169566",
+      "label": "PMO Patrol"
+    },
+    "ceo": {
+      "id": "993271843777691700",
+      "label": "#1700 urdao-ceo"
+    },
+    "changes": {
+      "id": "993273127201165313",
+      "label": "变更通知频道"
+    },
+    "dev": {
+      "id": "993272794034999397",
+      "label": "#9397 dev"
+    },
+    "ops": {
+      "id": "1476901866884567131",
+      "label": "#7131 ops"
+    },
+    "research": {
+      "id": "1476890694261014701",
+      "label": "#4701 research"
+    }
+  },
+  "threads": {
+    "1482265539496644709": {
+      "id": "1482265539496644709",
+      "label": "4709-A2A Pipeline Closeout",
+      "channel_type": "thread",
+      "session_keys": [
+        "agent:main:discord:channel:1482265539496644709",
+        "agent:ansen:discord:channel:1482265539496644709"
+      ],
+      "note": "This is a thread target, not Issac canonical A2A inbox"
+    }
+  },
+  "agent_aliases": {
+    "main": "issac",
+    "issac": "issac",
+    "satoshi": "satoshi",
+    "elon": "elon",
+    "ansen": "ansen"
+  }
+}

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>A2A Event X</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="logo">A2A</div>
+          <div>
+            <div class="title">Event X</div>
+            <div class="sub">Session Hub · Event Log</div>
+          </div>
+        </div>
+        <nav>
+          <button class="nav active" data-view="sessions">Sessions</button>
+          <button class="nav" data-view="events">Event Log</button>
+          <button class="nav" data-view="health">Health</button>
+        </nav>
+        <div class="sidebar-foot">
+          <span class="pill">B/S</span>
+          <span class="muted">MCP 后置</span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="filters" id="session-filters">
+            <select id="provider">
+              <option value="">全部 provider</option>
+              <option value="claude-code">claude-code</option>
+              <option value="codex">codex</option>
+              <option value="openclaw">openclaw</option>
+              <option value="grok-build">grok-build</option>
+              <option value="antigravity-cli">antigravity-cli</option>
+            </select>
+            <input id="project" type="search" placeholder="项目路径过滤…" />
+            <input id="search" type="search" placeholder="跨工具搜索消息…" />
+            <button id="refresh" class="btn">刷新</button>
+          </div>
+          <div class="filters hidden" id="event-filters">
+            <input id="agent" type="text" value="issac" placeholder="agent id" />
+            <button id="load-events" class="btn">拉取 inbox</button>
+          </div>
+        </header>
+
+        <section id="view-sessions" class="view">
+          <div class="split">
+            <div class="list-pane">
+              <div class="pane-head">
+                <h2>Sessions</h2>
+                <span id="session-count" class="muted">—</span>
+              </div>
+              <div id="session-list" class="list"></div>
+            </div>
+            <div class="detail-pane">
+              <div class="pane-head">
+                <h2 id="detail-title">选择一个 session</h2>
+                <code id="detail-meta" class="muted"></code>
+              </div>
+              <div id="messages" class="messages empty">左侧选择 session 查看消息列表</div>
+              <div class="resume-bar hidden" id="resume-bar">
+                <span class="muted">Resume</span>
+                <code id="resume-cmd"></code>
+                <button id="copy-resume" class="btn ghost">复制</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-events" class="view hidden">
+          <div class="pane-head">
+            <h2>Event Log inbox</h2>
+            <span class="muted">pull-first · 代理 a2a-v2 / toolkit</span>
+          </div>
+          <pre id="events-out" class="codeblock">点击「拉取 inbox」加载…</pre>
+        </section>
+
+        <section id="view-health" class="view hidden">
+          <div class="pane-head"><h2>Health</h2></div>
+          <pre id="health-out" class="codeblock">加载中…</pre>
+        </section>
+      </main>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>

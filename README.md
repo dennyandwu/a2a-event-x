@@ -1,109 +1,78 @@
 # A2A Event X
 
-**Standalone product:** Session Hub + Event Log for heterogeneous AI agents.
+**Standalone B/S product** for multi-agent session browsing and A2A Event Log.
 
-Unified local view of **Claude Code · Codex · OpenClaw · Grok Build · Antigravity CLI** sessions and messages, exposed as:
+Primary UX is a **local web app** (browser + HTTP API), not the terminal.
 
-- **CLI** `a2ax` (primary human interface)
-- **stdio MCP** binary (any MCP host — Claude Desktop, Cursor, etc.)
-- **Event Log** (merged from PROJ-012 / a2a-toolkit snapshot) under `packages/event-log`
+| Layer | Package | Role |
+|-------|---------|------|
+| **Web UI + API** | `packages/webapp` | Human product surface |
+| **Session Hub** | `packages/session-hub` | Read Claude / Codex / OpenClaw / Grok / Antigravity sessions |
+| **Event Log** | `packages/event-log` | Merged [a2a-toolkit](https://github.com/dennyandwu/a2a-toolkit) + v2 lease/bridge |
+| CLI | `packages/cli` | Secondary / scripts |
+| MCP | `packages/mcp-server` | **Deferred** until product is complete |
 
-### Product order
-
-1. **Now** — ship and use **A2A Event X alone** (no OpenClaw required).
-2. **Later** — optionally point OpenClaw’s `mcpServers` at this MCP binary (thin client wiring only).
-
-> OpenClaw is an optional **client**, not the owner. Event Log stays pull-first and decoupled.
-
-## Why two layers?
-
-| Layer | Owns | Question it answers |
-|-------|------|---------------------|
-| **Session Hub** | Read-only index of vendor CLI/desktop transcripts | “What sessions/messages do I have on this machine?” |
-| **Event Log** | Cross-agent task bus (claim / lease / ack / done) | “What work is assigned between agents?” |
-| **Projector** (optional, default OFF) | Pointers from Session Hub → Event Log | “Should other agents see that a coding session opened?” |
-
-See [docs/DECISIONS.md](docs/DECISIONS.md) for locked product decisions, and [docs/heritage/](docs/heritage/) for prior Event Log design.
-
-## Quick start
+## Quick start (B/S)
 
 ```bash
 git clone https://github.com/dennyandwu/a2a-event-x.git
 cd a2a-event-x
 npm install
 npm run build
-
-# Session Hub
-node packages/cli/dist/index.js health
-node packages/cli/dist/index.js list --limit 20
-node packages/cli/dist/index.js search "TODO"
-
-# MCP (stdio) — wire into OpenClaw / Claude Desktop
-node packages/mcp-server/dist/index.js
-
-# Event Log v2 consumer (Python)
-python3 packages/event-log/a2a-v2.py --help
+npm run web
 ```
 
-### Later: optional OpenClaw (or any agent) as MCP client
+Open **http://127.0.0.1:8787/**
 
-Not required for day-to-day use. When you want an agent to *query* this product:
+- **Sessions** — list / filter / open messages / copy resume hint  
+- **Event Log** — pull agent inbox (`a2a-v2`)  
+- **Health** — adapter roots + toolkit presence  
 
-```json
-{
-  "mcpServers": {
-    "a2a-event-x": {
-      "command": "node",
-      "args": ["/absolute/path/to/a2a-event-x/packages/mcp-server/dist/index.js"]
-    }
-  }
-}
+```bash
+# optional bind (e.g. Tailscale)
+A2AX_HOST=0.0.0.0 A2AX_PORT=8787 npm run web
 ```
 
-See [docs/DECISIONS.md](docs/DECISIONS.md) § “Later: OpenClaw MCP inclusion”.
-## MCP tools (`x_*` — avoids clash with `a2a_*` remote tools)
+## a2a-toolkit (Event Log) source
 
-| Tool | Purpose |
-|------|---------|
-| `x_health` | Adapter + projector status |
-| `x_list_sessions` | Multi-provider session list |
-| `x_get_session` | Metadata + resume hint |
-| `x_get_messages` | Paginated transcript |
-| `x_search` | Cross-tool text search |
-| `x_query_events` | Proxy Event Log v2 inbox |
-| `x_project_session_event` | Optional lifecycle write (default off) |
+| | |
+|--|--|
+| **Repo** | https://github.com/dennyandwu/a2a-toolkit *(private)* |
+| **Description** | urDAO A2A Toolkit — Event Log + Hook-C + Pipeline Executor |
+| **Canonical CLI** | `packages/event-log/scripts/a2a-log.py` |
+| **Upstream README** | `packages/event-log/docs-upstream/a2a-toolkit-README.md` |
 
-## Repository layout
+Additional 2026-07 hardening (v2 claim/lease, bridge) lives next to it as `a2a-v2.py`, `bridge_v2.py`, etc.
+
+## Architecture
 
 ```
-a2a-event-x/
-├── packages/
-│   ├── event-log/       # Python — merged a2a-toolkit / PROJ-012 snapshot
-│   ├── session-hub/     # TypeScript — adapters + hub
-│   ├── mcp-server/      # TypeScript — MCP stdio
-│   └── cli/             # TypeScript — a2ax
-├── docs/
-│   ├── DECISIONS.md
-│   └── heritage/        # prior specs & design
-└── skills/session-hub/  # OpenClaw / agent skill
+Browser  ──HTTP──►  webapp (:8787)
+                      │
+          ┌───────────┼───────────┐
+          ▼           ▼           ▼
+     Session Hub   Event Log    (later MCP)
+     adapters      a2a-log.py
+                   a2a-v2.py
 ```
 
-### Event Log import status
+## API (v0.1)
 
-`packages/event-log` currently contains the **2026-07-07 p0-fix snapshot** (v2 store, bridge, watchdog, schema, registry).
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/health` | adapters + toolkit flags |
+| GET | `/api/sessions` | `?provider=&project=&limit=` |
+| GET | `/api/sessions/:id` | session metadata |
+| GET | `/api/sessions/:id/messages` | paginated messages |
+| GET | `/api/search?q=` | cross-tool search |
+| GET | `/api/events/inbox?agent=` | Event Log inbox proxy |
 
-**Missing (must re-import from production Mac Mini):**
+## Deferred
 
-- `a2a-log.py` — v1 **canonical write path** (referenced as `~/.openclaw/scripts/a2a-log.py`)
-
-Live DB paths (not in git): `~/.openclaw/workspace/state/a2a-log/`
-
-## Security
-
-- Session adapters are **read-only** on vendor stores.
-- Projector defaults **off**; never auto-writes Event Log in v0.1.
-- Do not commit tokens, production SQLite, or JSONL.
+- **MCP** server packaging and OpenClaw `mcpServers` wiring  
+- Projector auto-write into Event Log  
+- Full UI for claim/ack/done (inbox JSON first)  
 
 ## License
 
-MIT (Session Hub / monorepo scaffolding). Heritage Event Log components retain their original project terms where noted.
+MIT for Event X scaffolding. Toolkit scripts retain urDAO/private project terms as upstream.

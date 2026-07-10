@@ -1,0 +1,23 @@
+{
+  "name": "@a2a-event-x/webapp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "a2ax-web": "./dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "npm run build && node dist/server.js"
+  },
+  "dependencies": {
+    "@a2a-event-x/session-hub": "0.1.0",
+    "hono": "^4.7.4",
+    "@hono/node-server": "^1.14.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  }
+}
