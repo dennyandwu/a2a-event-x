@@ -1,0 +1,54 @@
+{
+  "$schema": "a2a-topic-registry-v1",
+  "updated_at": "2026-07-07",
+  "purpose": "topic 注册表:声明周期类 topic 的 collapse_key 模板(v2 折叠语义,方案 4.4)。折叠仅作用于 pending 且未被 claim 的旧事件;enforcement 在 P2 切读后启用,当前为声明。",
+  "default": { "collapsible": false },
+  "topics": [
+    {
+      "pattern": "sop-email-check",
+      "class": "periodic",
+      "collapsible": true,
+      "collapse_key": "source + mailbox + message_id",
+      "note": "默认按 message_id;仅显式声明为线程摘要的任务才用 thread_id(防止线程内不同新邮件被误合并)"
+    },
+    {
+      "pattern": "ops-auto-alert-*",
+      "class": "periodic",
+      "collapsible": true,
+      "collapse_key": "alert_type + target",
+      "note": "同一告警对象只留最新;关单方 ops-closure-worker(白名单已于 2026-07-07 扩至 9 topic)"
+    },
+    {
+      "pattern": "ops-auto-signal-*",
+      "class": "periodic",
+      "collapsible": true,
+      "collapse_key": "topic",
+      "note": "触发式巡检,不承载业务对象,整体折叠"
+    },
+    {
+      "pattern": "learning-apply-*",
+      "class": "periodic",
+      "collapsible": true,
+      "collapse_key": "topic + target_agent",
+      "note": "周期性学习应用任务,同 agent 只留最新一班"
+    },
+    {
+      "pattern": "cron-report-*",
+      "class": "periodic",
+      "collapsible": true,
+      "collapse_key": "topic"
+    },
+    {
+      "pattern": "agent-health",
+      "class": "health",
+      "collapsible": true,
+      "collapse_key": "topic + agent"
+    },
+    {
+      "pattern": "*",
+      "class": "task",
+      "collapsible": false,
+      "note": "默认:真实业务任务不折叠"
+    }
+  ]
+}

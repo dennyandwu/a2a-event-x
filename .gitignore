@@ -1,0 +1,23 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+*.sqlite
+*.sqlite-*
+*.db
+.a2a-event-x/
+coverage/
+.npm/
+*.log
+.idea/
+.vscode/
+packages/event-log/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# never commit live secrets or production logs
+**/bridge-secret*
+**/*token*
+**/cowork.token

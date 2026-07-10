@@ -1,0 +1,18 @@
+{
+  "$schema": "a2a-agent-registry-v2",
+  "updated_at": "2026-07-07",
+  "purpose": "v2 agent 注册表(方案 4.6)。consumers.json(v1,组件视角)继续有效;本表是 agent 视角:接入方式/拉取周期/SLA/ACL。token 字段留空至 Bridge v2 上线(P3),SSH 路径沿用密钥。",
+  "agents": [
+    { "agent_id": "issac",    "host": "macmini", "access": "cli-local+hook-c", "owner": "openclaw-main", "pull_interval_s": 0,    "sla": "秒级(Hook-C)+watchdog 兜底", "acl_write_to": ["*"], "notes": "OpenClaw main agent" },
+    { "agent_id": "ansen",    "host": "macmini", "access": "cli-local+hook-c", "owner": "ansen-ops",     "pull_interval_s": 300,  "sla": "5min(ops-closure-worker)", "acl_write_to": ["*"] },
+    { "agent_id": "satoshi2", "host": "sv-vps",  "access": "ssh-cli",          "owner": "claude-code",   "pull_interval_s": 30,   "sla": "30s(a2a-watcher.sh)", "acl_write_to": ["*"] },
+    { "agent_id": "elon2",    "host": "sv-vps",  "access": "ssh-cli",          "owner": "claude-code",   "pull_interval_s": 30,   "sla": "30s", "acl_write_to": ["*"] },
+    { "agent_id": "wiki",     "host": "sv-vps",  "access": "ssh-cli",          "owner": "claude-code",   "pull_interval_s": 60,   "sla": "1min", "acl_write_to": ["*"] },
+    { "agent_id": "automation-runner", "host": "macmini", "access": "cli-local", "owner": "openclaw-local", "pull_interval_s": null, "sla": "producer-only", "acl_write_to": ["issac", "ansen"] },
+    { "agent_id": "cron",     "host": "macmini", "access": "cli-local",        "owner": "openclaw-local", "pull_interval_s": null, "sla": "producer-only(不消费 dispatch,遗留 138 条 stale 待判废)", "acl_write_to": ["*"] },
+    { "agent_id": "cowork",   "host": "external","access": "ssh-cli(v2 lease)", "owner": "claude-cowork", "pull_interval_s": 3600, "sla": "小时级(scheduled task),P3 首个异构试点", "acl_write_to": ["issac", "ansen", "satoshi2"], "pilot": true },
+    { "agent_id": "test",       "reserved": "合约测试专用 producer" },
+    { "agent_id": "test-agent", "reserved": "合约测试专用 consumer" }
+  ],
+  "retired": ["satoshi", "elon", "Elon Musk II", "collect"]
+}
