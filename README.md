@@ -1,14 +1,19 @@
 # A2A Event X
 
-**Session Hub + Event Log monorepo** for heterogeneous AI agents.
+**Standalone product:** Session Hub + Event Log for heterogeneous AI agents.
 
 Unified local view of **Claude Code · Codex · OpenClaw · Grok Build · Antigravity CLI** sessions and messages, exposed as:
 
-- **CLI** `a2ax`
-- **stdio MCP** server (OpenClaw / Claude / any MCP client)
+- **CLI** `a2ax` (primary human interface)
+- **stdio MCP** binary (any MCP host — Claude Desktop, Cursor, etc.)
 - **Event Log** (merged from PROJ-012 / a2a-toolkit snapshot) under `packages/event-log`
 
-> OpenClaw is a **client**, not the owner. Event Log remains pull-first and decoupled.
+### Product order
+
+1. **Now** — ship and use **A2A Event X alone** (no OpenClaw required).
+2. **Later** — optionally point OpenClaw’s `mcpServers` at this MCP binary (thin client wiring only).
+
+> OpenClaw is an optional **client**, not the owner. Event Log stays pull-first and decoupled.
 
 ## Why two layers?
 
@@ -40,7 +45,9 @@ node packages/mcp-server/dist/index.js
 python3 packages/event-log/a2a-v2.py --help
 ```
 
-### OpenClaw MCP config example
+### Later: optional OpenClaw (or any agent) as MCP client
+
+Not required for day-to-day use. When you want an agent to *query* this product:
 
 ```json
 {
@@ -53,6 +60,7 @@ python3 packages/event-log/a2a-v2.py --help
 }
 ```
 
+See [docs/DECISIONS.md](docs/DECISIONS.md) § “Later: OpenClaw MCP inclusion”.
 ## MCP tools (`x_*` — avoids clash with `a2a_*` remote tools)
 
 | Tool | Purpose |
