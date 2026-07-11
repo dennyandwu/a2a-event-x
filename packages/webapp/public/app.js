@@ -16,6 +16,20 @@ let selectedDeliveryIdx = null;
 let agentStatusFilter = "active";
 /** @type {ReturnType<typeof setInterval> | null} */
 let autoRefreshTimer = null;
+let boardBusy = false;
+let lastBoardAt = null;
+
+function setLoading(on) {
+  let bar = document.getElementById("global-loading");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "global-loading";
+    bar.className = "loading-bar";
+    const main = document.querySelector(".main");
+    if (main) main.insertBefore(bar, main.firstChild);
+  }
+  bar.classList.toggle("on", !!on);
+}
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
@@ -31,6 +45,10 @@ async function api(path, opts) {
     throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
   }
   return data;
+}
+
+function fmtTime(d = new Date()) {
+  return d.toLocaleTimeString();
 }
 
 function setView(name) {
@@ -88,19 +106,28 @@ function agentToast(msg, kind) {
 // ── Agents board ──────────────────────────────────────────
 
 async function loadBoard() {
+  if (boardBusy) return;
+  boardBusy = true;
+  setLoading(true);
   const err = $("#board-error");
   err.classList.add("hidden");
+  const btn = $("#refresh-board");
+  if (btn) btn.disabled = true;
   try {
     boardData = await api("/api/agents/board");
+    lastBoardAt = new Date();
     renderBoard();
     if (selectedAgentId) {
-      // refresh detail counts without losing selection
       await loadAgentDetail(selectedAgentId, false);
     }
   } catch (e) {
     err.textContent = String(e.message || e);
     err.classList.remove("hidden");
     $("#agent-board").innerHTML = "";
+  } finally {
+    boardBusy = false;
+    setLoading(false);
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -108,10 +135,19 @@ function renderBoard() {
   if (!boardData) return;
   const hideIdle = $("#hide-idle").checked;
   const hideReserved = $("#hide-reserved").checked;
+  const q = ($("#agent-filter")?.value || "").trim().toLowerCase();
+  const sort = $("#agent-sort")?.value || "active";
   const t = boardData.totals || {};
-  $("#board-totals").textContent =
+  const autoOn = $("#auto-refresh")?.checked;
+  $("#board-totals").innerHTML =
+    (autoOn ? `<span class="pulse-dot" title="auto-refresh"></span>` : "") +
     `Σ pending ${t.pending || 0} · claimed ${t.claimed || 0} · acked ${t.acked || 0} · dead ${t.dead || 0}` +
     (boardData.db_ok ? "" : " · DB missing");
+  if ($("#board-updated")) {
+    $("#board-updated").innerHTML = lastBoardAt
+      ? `更新于 ${escapeHtml(fmtTime(lastBoardAt))} · <span class="kbd">r</span> 刷新`
+      : "";
+  }
 
   if (boardData.error) {
     $("#board-error").textContent = boardData.error;
@@ -121,6 +157,24 @@ function renderBoard() {
   let agents = boardData.agents || [];
   if (hideIdle) agents = agents.filter((a) => a.total_active > 0 || a.dead > 0);
   if (hideReserved) agents = agents.filter((a) => !a.reserved);
+  if (q) {
+    agents = agents.filter(
+      (a) =>
+        a.agent_id.toLowerCase().includes(q) ||
+        (a.host || "").toLowerCase().includes(q) ||
+        (a.notes || "").toLowerCase().includes(q) ||
+        (a.owner || "").toLowerCase().includes(q),
+    );
+  }
+  agents = [...agents].sort((a, b) => {
+    if (sort === "name") return a.agent_id.localeCompare(b.agent_id);
+    if (sort === "pending") return (b.pending || 0) - (a.pending || 0) || a.agent_id.localeCompare(b.agent_id);
+    if (sort === "dead") return (b.dead || 0) - (a.dead || 0) || a.agent_id.localeCompare(b.agent_id);
+    // active default
+    if (b.total_active !== a.total_active) return b.total_active - a.total_active;
+    if (b.pending !== a.pending) return b.pending - a.pending;
+    return a.agent_id.localeCompare(b.agent_id);
+  });
 
   const el = $("#agent-board");
   el.innerHTML = "";
@@ -157,7 +211,10 @@ function renderBoard() {
           s.topic ||
           s.type ||
           "delivery";
-        return `<div class="sample"><b>${escapeHtml(s.status)}</b> · ${escapeHtml(String(summary))}</div>`;
+        const corr = s.correlation_id
+          ? ` · <span class="linkish" data-corr="${escapeHtml(s.correlation_id)}">wf</span>`
+          : "";
+        return `<div class="sample"><b>${escapeHtml(s.status)}</b> · ${escapeHtml(String(summary))}${corr}</div>`;
       })
       .join("");
 
@@ -191,9 +248,21 @@ function renderBoard() {
     if (claimBtn) {
       claimBtn.onclick = async (e) => {
         e.stopPropagation();
-        await claimAgent(a.agent_id, Math.min(a.pending, 10));
+        claimBtn.disabled = true;
+        try {
+          await claimAgent(a.agent_id, Math.min(a.pending, 10));
+        } finally {
+          claimBtn.disabled = false;
+        }
       };
     }
+    card.querySelectorAll("[data-corr]").forEach((node) => {
+      node.onclick = (e) => {
+        e.stopPropagation();
+        setView("workflows");
+        openWorkflow(node.getAttribute("data-corr"));
+      };
+    });
     card.onclick = () => selectAgent(a.agent_id);
     el.appendChild(card);
   }
@@ -226,6 +295,7 @@ async function selectAgent(agentId) {
   renderBoard();
   $("#agent-detail-title").textContent = agentId;
   $("#agent-claim").classList.remove("hidden");
+  $("#agent-select-all").classList.remove("hidden");
   $("#agent-batch-done").classList.remove("hidden");
   $("#agent-requeue-dead").classList.remove("hidden");
   $("#agent-compensate").classList.remove("hidden");
@@ -499,9 +569,46 @@ function selectDelivery(i) {
   if (!d) return;
   const box = $("#agent-delivery-detail");
   box.classList.remove("empty");
-  box.innerHTML = `<pre class="codeblock" style="margin:0;max-height:none">${escapeHtml(JSON.stringify(d, null, 2))}</pre>`;
+  const corrLink = d.correlation_id
+    ? `<div style="padding:8px 0"><span class="linkish" id="goto-corr">打开 workflow ${escapeHtml(d.correlation_id)}</span></div>`
+    : "";
+  const deadBtn =
+    d.status === "dead"
+      ? `<div style="padding:4px 0"><button class="btn danger ghost" id="requeue-one" type="button">Requeue 此条 dead</button></div>`
+      : "";
+  box.innerHTML =
+    corrLink +
+    deadBtn +
+    `<pre class="codeblock" style="margin:0;max-height:none">${escapeHtml(JSON.stringify(d, null, 2))}</pre>`;
 
-  // ops: claim_token present (claimed/acked with token) OR pending needs claim first
+  const gl = $("#goto-corr");
+  if (gl) {
+    gl.onclick = () => {
+      setView("workflows");
+      openWorkflow(d.correlation_id);
+    };
+  }
+  const rq = $("#requeue-one");
+  if (rq) {
+    rq.onclick = async () => {
+      rq.disabled = true;
+      try {
+        const data = await api("/api/events/requeue-dead", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ delivery_id: d.delivery_id }),
+        });
+        agentToast(`requeued ${data.requeued ?? 0}`, data.ok ? "ok" : "err");
+        await loadBoard();
+        await loadAgentDetail(selectedAgentId, true);
+      } catch (e) {
+        agentToast(String(e.message || e), "err");
+      } finally {
+        rq.disabled = false;
+      }
+    };
+  }
+
   if (d.claim_token && (d.status === "claimed" || d.status === "acked")) {
     $("#agent-ops").classList.remove("hidden");
   } else if (d.status === "pending") {
@@ -509,10 +616,22 @@ function selectDelivery(i) {
     agentToast("pending 需先 Claim 再 ACK/DONE", "");
   } else if (d.status === "dead") {
     $("#agent-ops").classList.add("hidden");
-    agentToast("dead-letter：需补偿/人工处理（后续接入 toolkit compensate）", "");
+    agentToast("dead-letter：可 Requeue 此条，或批量 Requeue dead / Compensate", "");
   } else {
     $("#agent-ops").classList.add("hidden");
   }
+}
+
+function selectAllClaimable() {
+  let n = 0;
+  for (const d of agentDeliveries) {
+    if (d.claim_token && (d.status === "claimed" || d.status === "acked")) {
+      d._selected = true;
+      n++;
+    }
+  }
+  renderAgentDeliveries();
+  agentToast(n ? `已全选 ${n} 条` : "没有可批量 DONE 的项", n ? "ok" : "err");
 }
 
 async function agentDeliveryOp(op) {
@@ -871,6 +990,7 @@ $("#hide-reserved").addEventListener("change", renderBoard);
 $("#agent-claim").addEventListener("click", () => {
   if (selectedAgentId) claimAgent(selectedAgentId, 10);
 });
+$("#agent-select-all").addEventListener("click", () => selectAllClaimable());
 $("#agent-batch-done").addEventListener("click", () => batchDoneSelected());
 $("#agent-requeue-dead").addEventListener("click", () => requeueDeadForAgent());
 $("#agent-compensate").addEventListener("click", () => compensateDryRun());
@@ -881,6 +1001,26 @@ $("#agent-open-inbox").addEventListener("click", () => {
 $("#auto-refresh").addEventListener("change", setupAutoRefresh);
 $("#auto-refresh-sec").addEventListener("change", setupAutoRefresh);
 $("#refresh-audit").addEventListener("click", loadAudit);
+$("#agent-filter").addEventListener("input", () => renderBoard());
+$("#agent-sort").addEventListener("change", () => renderBoard());
+
+// keyboard: r refresh board, / focus filter (when not in input)
+document.addEventListener("keydown", (e) => {
+  const tag = (e.target && e.target.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  if (e.key === "r" || e.key === "R") {
+    if (!$("#view-agents").classList.contains("hidden")) {
+      e.preventDefault();
+      loadBoard();
+    }
+  }
+  if (e.key === "/") {
+    if (!$("#view-agents").classList.contains("hidden")) {
+      e.preventDefault();
+      $("#agent-filter")?.focus();
+    }
+  }
+});
 $$(".stab").forEach((b) =>
   b.addEventListener("click", async () => {
     agentStatusFilter = b.dataset.st;

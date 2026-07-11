@@ -35,8 +35,15 @@
         <header class="topbar">
           <div class="filters" id="agent-filters">
             <button id="refresh-board" class="btn">刷新看板</button>
+            <input id="agent-filter" type="search" placeholder="筛选 agent…" style="min-width:120px" />
+            <select id="agent-sort" title="sort">
+              <option value="active">按活跃度</option>
+              <option value="pending">按 pending</option>
+              <option value="dead">按 dead</option>
+              <option value="name">按名称</option>
+            </select>
             <label class="chk">
-              <input type="checkbox" id="hide-idle" checked /> 隐藏无积压 agent
+              <input type="checkbox" id="hide-idle" checked /> 隐藏无积压
             </label>
             <label class="chk">
               <input type="checkbox" id="hide-reserved" /> 隐藏 reserved
@@ -50,6 +57,7 @@
               <option value="60">60s</option>
             </select>
             <span id="board-totals" class="muted"></span>
+            <span id="board-updated" class="muted"></span>
           </div>
           <div class="filters hidden" id="event-filters">
             <select id="agent" title="agent from registry"></select>
@@ -101,6 +109,7 @@
                 <h2 id="agent-detail-title">选择一个 agent</h2>
                 <div class="detail-actions">
                   <button id="agent-claim" class="btn hidden" title="Claim pending for this agent">Claim</button>
+                  <button id="agent-select-all" class="btn ghost hidden" title="Select all claimable">全选</button>
                   <button id="agent-batch-done" class="btn hidden" title="Batch DONE selected claimed">Batch DONE</button>
                   <button id="agent-requeue-dead" class="btn danger ghost hidden">Requeue dead</button>
                   <button id="agent-compensate" class="btn ghost hidden" title="compensate dry-run">Compensate dry-run</button>

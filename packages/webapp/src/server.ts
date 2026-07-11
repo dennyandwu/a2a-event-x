@@ -61,7 +61,7 @@ app.get("/api/health", async (c) => {
     product: "a2a-event-x",
     product_focus: "multi-agent-interaction",
     surface: "bs",
-    version: "0.7.0",
+    version: "0.8.0",
     ...h,
     eventLog: status,
     opsAudit: readRecentOps(5),
@@ -418,7 +418,7 @@ app.get("/api/meta", (c) =>
     primarySurface: "browser",
     defaultView: "agents",
     secondaryModules: ["inbox", "sessions", "write-path", "ops-audit"],
-    version: "0.7.0",
+    version: "0.8.0",
     mcp: "deferred",
     providers: hub.providers(),
     docs: {

@@ -46,6 +46,7 @@ export function runPython(
   script: string,
   args: string[],
   env: NodeJS.ProcessEnv = process.env,
+  timeoutMs = Number(process.env.A2AX_PYTHON_TIMEOUT_MS || 120_000),
 ): Promise<{ ok: boolean; code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = spawn("python3", [script, ...args], {
@@ -53,14 +54,47 @@ export function runPython(
     });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    const timer =
+      timeoutMs > 0
+        ? setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            try {
+              child.kill("SIGKILL");
+            } catch {
+              /* ignore */
+            }
+            resolve({
+              ok: false,
+              code: 124,
+              stdout,
+              stderr: (stderr || "") + `\n[timeout after ${timeoutMs}ms]`,
+            });
+          }, timeoutMs)
+        : null;
     child.stdout.on("data", (d) => (stdout += d.toString()));
     child.stderr.on("data", (d) => (stderr += d.toString()));
     child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
       resolve({
         ok: code === 0,
         code: code ?? 1,
         stdout,
         stderr,
+      });
+    });
+    child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve({
+        ok: false,
+        code: 1,
+        stdout,
+        stderr: String(err),
       });
     });
   });
