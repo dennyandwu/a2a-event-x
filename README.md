@@ -1,95 +1,64 @@
 # A2A Event X
 
-**Standalone B/S product** for multi-agent session browsing and A2A Event Log.
+**多 Agent 交互管理指挥台**（本地优先 B/S）。
 
-Primary UX is a **local web app** (browser + HTTP API), not the terminal.
+产品目标不是「多 CLI 聊天浏览器」，而是：**看见、调度、审计多个 agent 之间的任务与交互**。
 
-| Layer | Package | Role |
-|-------|---------|------|
-| **Web UI + API** | `packages/webapp` | Human product surface |
-| **Session Hub** | `packages/session-hub` | Read Claude / Codex / OpenClaw / Grok / Antigravity sessions |
-| **Event Log** | `packages/event-log` | Merged [a2a-toolkit](https://github.com/dennyandwu/a2a-toolkit) + v2 lease/bridge |
-| CLI | `packages/cli` | Secondary / scripts |
-| MCP | `packages/mcp-server` | **Deferred** until product is complete |
+| 优先级 | 模块 | 角色 |
+|--------|------|------|
+| **主线** | Event Log + **Agent 看板** | pending / claimed / acked / 操作闭环 |
+| 主线 | Inbox | 单 agent claim / ack / done |
+| 附属 | Sessions | coding CLI 历史上下文 |
+| 后置 | MCP | 产品完成后再做 |
 
-## Quick start (B/S)
+名称固定：**A2A Event X**。
+
+## Quick start
 
 ```bash
 git clone https://github.com/dennyandwu/a2a-event-x.git
 cd a2a-event-x
 npm install
-npm run build
 npm run web
 ```
 
-Open **http://127.0.0.1:8787/**
+打开 **http://127.0.0.1:8787/**  
 
-- **Sessions** — list / filter / open messages / copy resume hint  
-- **Event Log** — pull agent inbox (`a2a-v2`)  
-- **Health** — adapter roots + toolkit presence  
+默认页：**Agents 看板** → 点击 agent 进入 Inbox。
 
-```bash
-# optional bind (e.g. Tailscale)
-A2AX_HOST=0.0.0.0 A2AX_PORT=8787 npm run web
-```
-
-## a2a-toolkit (Event Log) source
-
-| | |
-|--|--|
-| **Repo** | https://github.com/dennyandwu/a2a-toolkit *(private)* |
-| **Description** | urDAO A2A Toolkit — Event Log + Hook-C + Pipeline Executor |
-| **Canonical CLI** | `packages/event-log/scripts/a2a-log.py` |
-| **Upstream README** | `packages/event-log/docs-upstream/a2a-toolkit-README.md` |
-
-Additional 2026-07 hardening (v2 claim/lease, bridge) lives next to it as `a2a-v2.py`, `bridge_v2.py`, etc.
-
-## Architecture
+## 架构
 
 ```
-Browser  ──HTTP──►  webapp (:8787)
-                      │
-          ┌───────────┼───────────┐
-          ▼           ▼           ▼
-     Session Hub   Event Log    (later MCP)
-     adapters      a2a-log.py
-                   a2a-v2.py
+B/S 指挥台
+  Agents 看板 · Inbox · Write Path
+        ↓
+Event Log (a2a-toolkit v1 + v2 lease)
+        ↓
+Sessions（上下文，非主线）
 ```
 
-## API (v0.2)
+## 关键 API
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/api/health` | adapters + toolkit paths |
-| GET | `/api/sessions` | `?provider=&project=&limit=` |
-| GET | `/api/sessions/:id` | session metadata |
-| GET | `/api/sessions/:id/messages` | paginated messages |
-| GET | `/api/search?q=` | cross-tool search |
-| GET | `/api/events/status` | write-path topology + sqlite stats |
-| GET | `/api/registry/agents` | agent registry |
-| GET | `/api/registry/topics` | topic registry |
-| GET | `/api/events/inbox` | `?agent=&mode=auto\|v2\|v1&claim=1` — auto falls back v1 when v2 empty |
-| POST | `/api/events/claim` | `{ agent, limit, lease_s }` (v2 only) |
-| POST | `/api/events/ack` | `{ token }` (v2) |
-| POST | `/api/events/done` | `{ token, summary? }` (v2) |
-| POST | `/api/events/renew` | `{ token, extend_s? }` |
-| POST | `/api/events/cancel` | `{ token, reason? }` |
-| POST | `/api/events/v1/ack` | `{ agent, seq, file }` JSONL path |
-| POST | `/api/events/v1/done` | `{ agent, seq, file, summary? }` |
+| Method | Path | 用途 |
+|--------|------|------|
+| GET | `/api/agents/board` | **按 agent 的 pending/claimed 看板** |
+| GET | `/api/events/inbox` | 单 agent inbox（`mode=auto\|v2\|v1`） |
+| POST | `/api/events/claim\|ack\|done\|…` | 交互操作 |
+| GET | `/api/events/status` | 写路径拓扑 |
+| GET | `/api/sessions` | 附属 session 列表 |
 
-### Event Log env
+## Event Log
 
-See `packages/event-log/config.env.example`:
+上游 toolkit：https://github.com/dennyandwu/a2a-toolkit  
 
-- `A2A_LOG_HOME` — state root (default `~/.openclaw/workspace/state/a2a-log`)
-- `A2A_LOG_CLI` — v1 writer (default monorepo `scripts/a2a-log.py`)
-- `A2A_V2_DB` — optional sqlite override
+环境见 `packages/event-log/config.env.example`（`A2A_LOG_HOME` / `A2A_LOG_CLI` / `A2A_V2_DB`）。
 
-## Deferred
+## 产品决策
 
-- **MCP** server packaging and OpenClaw `mcpServers` wiring  
-- Projector auto-write into Event Log  
+- [docs/PRODUCT-REORIENT.md](docs/PRODUCT-REORIENT.md) — 目标与偏离纠正  
+- [docs/DECISIONS.md](docs/DECISIONS.md) — 锁定决策  
+- [docs/reference/](docs/reference/) — A2A / agent 互通调研  
 
 ## License
 
-MIT for Event X scaffolding. Toolkit scripts retain urDAO/private project terms as upstream.
+MIT（脚手架）。Toolkit 脚本保留上游条款。

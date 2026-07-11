@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * A2A Event X — B/S primary surface (v0.3)
+ * A2A Event X — multi-agent interaction console (B/S)
+ * Default surface: agent board (pending/claimed). Sessions are secondary context.
  */
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -11,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SessionHub } from "@a2a-event-x/session-hub";
 import {
+  agentsBoard,
   eventLogPaths,
   eventLogStatus,
   inboxAuto,
@@ -50,11 +52,17 @@ app.get("/api/health", async (c) => {
   const status = await eventLogStatus(repoRoot);
   return c.json({
     product: "a2a-event-x",
+    product_focus: "multi-agent-interaction",
     surface: "bs",
-    version: "0.3.0",
+    version: "0.4.0",
     ...h,
     eventLog: status,
   });
+});
+
+/** Agent kanban: pending / claimed / acked per agent */
+app.get("/api/agents/board", async (c) => {
+  return c.json(await agentsBoard(repoRoot));
 });
 
 app.get("/api/sessions", async (c) => {
@@ -231,13 +239,18 @@ app.post("/api/events/v1/done", async (c) => {
 app.get("/api/meta", (c) =>
   c.json({
     product: "A2A Event X",
+    product_focus: "multi-agent-interaction",
+    tagline: "多 Agent 交互管理指挥台",
     primarySurface: "browser",
-    version: "0.3.0",
+    defaultView: "agents",
+    secondaryModules: ["inbox", "sessions", "write-path"],
+    version: "0.4.0",
     mcp: "deferred",
     providers: hub.providers(),
     docs: {
       toolkit: "https://github.com/dennyandwu/a2a-toolkit",
       eventX: "https://github.com/dennyandwu/a2a-event-x",
+      reorient: "docs/PRODUCT-REORIENT.md",
     },
   }),
 );
@@ -249,9 +262,8 @@ app.get("*", async (c) => {
   return c.text("UI missing: packages/webapp/public/index.html", 500);
 });
 
-console.log(`A2A Event X web → http://${HOST}:${PORT}`);
-console.log(`  UI:     http://${HOST}:${PORT}/`);
-console.log(`  status: http://${HOST}:${PORT}/api/events/status`);
-console.log(`  inbox:  auto v2→v1 fallback · claim/ack/done`);
+console.log(`A2A Event X — multi-agent interaction console → http://${HOST}:${PORT}`);
+console.log(`  board:  http://${HOST}:${PORT}/api/agents/board`);
+console.log(`  inbox:  /api/events/*  · sessions secondary`);
 
 serve({ fetch: app.fetch, hostname: HOST, port: PORT });

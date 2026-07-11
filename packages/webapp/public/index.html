@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>A2A Event X</title>
+    <title>A2A Event X — 多 Agent 交互指挥台</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -13,35 +13,33 @@
           <div class="logo">A2A</div>
           <div>
             <div class="title">Event X</div>
-            <div class="sub">Session Hub · Event Log</div>
+            <div class="sub">多 Agent 交互管理</div>
           </div>
         </div>
         <nav>
-          <button class="nav active" data-view="sessions">Sessions</button>
-          <button class="nav" data-view="events">Event Log</button>
+          <button class="nav active" data-view="agents">Agents</button>
+          <button class="nav" data-view="events">Inbox</button>
+          <button class="nav" data-view="sessions">Sessions</button>
           <button class="nav" data-view="paths">Write Path</button>
           <button class="nav" data-view="health">Health</button>
         </nav>
         <div class="sidebar-foot">
           <span class="pill">B/S</span>
-          <span class="muted">v0.3 · MCP 后置</span>
+          <span class="muted">v0.4 · 交互优先</span>
         </div>
       </aside>
 
       <main class="main">
         <header class="topbar">
-          <div class="filters" id="session-filters">
-            <select id="provider">
-              <option value="">全部 provider</option>
-              <option value="claude-code">claude-code</option>
-              <option value="codex">codex</option>
-              <option value="openclaw">openclaw</option>
-              <option value="grok-build">grok-build</option>
-              <option value="antigravity-cli">antigravity-cli</option>
-            </select>
-            <input id="project" type="search" placeholder="项目路径过滤…" />
-            <input id="search" type="search" placeholder="跨工具搜索消息…" />
-            <button id="refresh" class="btn">刷新</button>
+          <div class="filters" id="agent-filters">
+            <button id="refresh-board" class="btn">刷新看板</button>
+            <label class="chk">
+              <input type="checkbox" id="hide-idle" checked /> 隐藏无积压 agent
+            </label>
+            <label class="chk">
+              <input type="checkbox" id="hide-reserved" /> 隐藏 reserved
+            </label>
+            <span id="board-totals" class="muted"></span>
           </div>
           <div class="filters hidden" id="event-filters">
             <select id="agent" title="agent from registry"></select>
@@ -55,12 +53,68 @@
             <button id="load-events" class="btn ghost">只读 inbox</button>
             <button id="claim-events" class="btn">Claim (v2)</button>
           </div>
+          <div class="filters hidden" id="session-filters">
+            <select id="provider">
+              <option value="">全部 provider</option>
+              <option value="claude-code">claude-code</option>
+              <option value="codex">codex</option>
+              <option value="openclaw">openclaw</option>
+              <option value="grok-build">grok-build</option>
+              <option value="antigravity-cli">antigravity-cli</option>
+            </select>
+            <input id="project" type="search" placeholder="项目路径过滤…" />
+            <input id="search" type="search" placeholder="跨工具搜索消息…" />
+            <button id="refresh" class="btn">刷新</button>
+          </div>
           <div class="filters hidden" id="path-filters">
             <button id="refresh-paths" class="btn">刷新写路径状态</button>
           </div>
         </header>
 
-        <section id="view-sessions" class="view">
+        <!-- Agents board (DEFAULT) -->
+        <section id="view-agents" class="view">
+          <div class="pane-head">
+            <h2>Agent 看板</h2>
+            <span class="muted">pending · claimed · acked · 点击卡片打开 Inbox</span>
+          </div>
+          <div id="board-error" class="banner hidden"></div>
+          <div id="agent-board" class="kanban"></div>
+        </section>
+
+        <section id="view-events" class="view hidden">
+          <div class="split">
+            <div class="list-pane">
+              <div class="pane-head">
+                <h2>Inbox</h2>
+                <span id="event-count" class="muted">—</span>
+              </div>
+              <div id="event-mode-banner" class="banner muted"></div>
+              <div id="event-list" class="list"></div>
+            </div>
+            <div class="detail-pane">
+              <div class="pane-head">
+                <h2 id="event-detail-title">选择一条 delivery</h2>
+                <code id="event-detail-meta" class="muted"></code>
+              </div>
+              <div id="event-detail" class="messages empty">
+                从 Agents 看板点进某个 agent，或在此 Claim / ACK / DONE。
+              </div>
+              <div class="ops-bar hidden" id="event-ops">
+                <button id="op-ack" class="btn ghost">ACK</button>
+                <button id="op-renew" class="btn ghost">Renew</button>
+                <button id="op-done" class="btn">DONE</button>
+                <button id="op-cancel" class="btn danger">Cancel</button>
+                <input id="done-summary" type="text" placeholder="summary / reason（可选）" />
+              </div>
+              <div id="event-toast" class="toast muted"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-sessions" class="view hidden">
+          <div class="banner muted" style="margin: 8px 16px 0">
+            Sessions 为上下文模块（coding CLI 历史），不是产品主线。
+          </div>
           <div class="split">
             <div class="list-pane">
               <div class="pane-head">
@@ -80,36 +134,6 @@
                 <code id="resume-cmd"></code>
                 <button id="copy-resume" class="btn ghost">复制</button>
               </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="view-events" class="view hidden">
-          <div class="split">
-            <div class="list-pane">
-              <div class="pane-head">
-                <h2>Inbox</h2>
-                <span id="event-count" class="muted">—</span>
-              </div>
-              <div id="event-mode-banner" class="banner muted"></div>
-              <div id="event-list" class="list"></div>
-            </div>
-            <div class="detail-pane">
-              <div class="pane-head">
-                <h2 id="event-detail-title">选择一条 delivery</h2>
-                <code id="event-detail-meta" class="muted"></code>
-              </div>
-              <div id="event-detail" class="messages empty">
-                auto 模式：先查 v2 sqlite，空则回退 v1 JSONL pending。
-              </div>
-              <div class="ops-bar hidden" id="event-ops">
-                <button id="op-ack" class="btn ghost">ACK</button>
-                <button id="op-renew" class="btn ghost">Renew</button>
-                <button id="op-done" class="btn">DONE</button>
-                <button id="op-cancel" class="btn danger">Cancel</button>
-                <input id="done-summary" type="text" placeholder="summary / reason（可选）" />
-              </div>
-              <div id="event-toast" class="toast muted"></div>
             </div>
           </div>
         </section>

@@ -326,6 +326,275 @@ export function loadRegistryAgents(repoRoot: string): unknown {
   return JSON.parse(fs.readFileSync(p.registry, "utf8"));
 }
 
+export type RegistryAgent = {
+  agent_id: string;
+  host?: string;
+  access?: string;
+  owner?: string;
+  sla?: string;
+  notes?: string;
+  reserved?: string;
+  pilot?: boolean;
+  pull_interval_s?: number | null;
+};
+
+/**
+ * Agent kanban board: registry agents × delivery status counts from v2 sqlite.
+ * Also includes agents that appear only in DB (not in registry).
+ */
+export async function agentsBoard(repoRoot: string): Promise<{
+  ok: boolean;
+  product_focus: string;
+  db_ok: boolean;
+  db_path: string;
+  agents: Array<{
+    agent_id: string;
+    in_registry: boolean;
+    host?: string;
+    access?: string;
+    owner?: string;
+    sla?: string;
+    notes?: string;
+    reserved?: boolean;
+    counts: Record<string, number>;
+    pending: number;
+    claimed: number;
+    acked: number;
+    done: number;
+    dead: number;
+    other: number;
+    total_active: number;
+    oldest_pending_ts?: string | null;
+    sample_pending: Array<Record<string, unknown>>;
+  }>;
+  totals: Record<string, number>;
+  error?: string;
+}> {
+  const p = eventLogPaths(repoRoot);
+  const reg = loadRegistryAgents(repoRoot) as {
+    agents?: RegistryAgent[];
+    retired?: string[];
+  };
+  const retired = new Set(reg.retired || []);
+  const regMap = new Map<string, RegistryAgent>();
+  for (const a of reg.agents || []) {
+    if (a.agent_id) regMap.set(a.agent_id, a);
+  }
+
+  const emptyTotals = () =>
+    ({
+      pending: 0,
+      claimed: 0,
+      acked: 0,
+      done: 0,
+      dead: 0,
+      cancelled: 0,
+      other: 0,
+    }) as Record<string, number>;
+
+  if (!p.dbExists) {
+    // registry-only empty board
+    const agents = [...regMap.values()]
+      .filter((a) => !retired.has(a.agent_id))
+      .map((a) => ({
+        agent_id: a.agent_id,
+        in_registry: true,
+        host: a.host,
+        access: a.access,
+        owner: a.owner,
+        sla: a.sla,
+        notes: a.notes || a.reserved,
+        reserved: Boolean(a.reserved),
+        counts: emptyTotals(),
+        pending: 0,
+        claimed: 0,
+        acked: 0,
+        done: 0,
+        dead: 0,
+        other: 0,
+        total_active: 0,
+        oldest_pending_ts: null,
+        sample_pending: [] as Array<Record<string, unknown>>,
+      }));
+    return {
+      ok: true,
+      product_focus: "multi-agent-interaction",
+      db_ok: false,
+      db_path: p.db,
+      agents,
+      totals: emptyTotals(),
+      error: "sqlite missing — board shows registry only",
+    };
+  }
+
+  const script = `
+import json, os, sqlite3
+db = ${JSON.stringify(p.db)}
+c = sqlite3.connect(db)
+c.row_factory = sqlite3.Row
+
+# counts per agent per status
+rows = c.execute(
+  "SELECT to_agent, status, COUNT(*) AS n FROM deliveries GROUP BY to_agent, status"
+).fetchall()
+by = {}
+for r in rows:
+  ag = r["to_agent"] or "?"
+  st = r["status"] or "other"
+  by.setdefault(ag, {})
+  by[ag][st] = r["n"]
+
+# oldest pending ts + samples
+samples = {}
+oldest = {}
+for ag in by:
+  o = c.execute(
+    """SELECT e.ts FROM deliveries d
+       LEFT JOIN events e ON e.source_file=d.source_file AND e.seq=d.seq
+       WHERE d.to_agent=? AND d.status='pending'
+       ORDER BY COALESCE(e.ts, d.updated_at) ASC LIMIT 1""",
+    (ag,),
+  ).fetchone()
+  oldest[ag] = o["ts"] if o and o["ts"] else None
+  sm = c.execute(
+    """SELECT d.delivery_id, d.source_file, d.seq, d.status, d.attempt_count,
+              d.lease_expires_at, e.ts, e.from_agent, e.type, e.topic, e.payload, e.correlation_id
+       FROM deliveries d
+       LEFT JOIN events e ON e.source_file=d.source_file AND e.seq=d.seq
+       WHERE d.to_agent=? AND d.status IN ('pending','claimed','acked')
+       ORDER BY CASE d.status WHEN 'claimed' THEN 0 WHEN 'acked' THEN 1 ELSE 2 END,
+                COALESCE(e.ts, d.updated_at) ASC
+       LIMIT 8""",
+    (ag,),
+  ).fetchall()
+  samples[ag] = []
+  for s in sm:
+    payload = None
+    try:
+      payload = json.loads(s["payload"]) if s["payload"] else None
+    except Exception:
+      payload = s["payload"]
+    samples[ag].append({
+      "delivery_id": s["delivery_id"],
+      "source_file": s["source_file"],
+      "seq": s["seq"],
+      "status": s["status"],
+      "attempt_count": s["attempt_count"],
+      "lease_expires_at": s["lease_expires_at"],
+      "ts": s["ts"],
+      "from": s["from_agent"],
+      "type": s["type"],
+      "topic": s["topic"],
+      "correlation_id": s["correlation_id"],
+      "payload": payload,
+    })
+
+print(json.dumps({"by": by, "oldest": oldest, "samples": samples}))
+`;
+
+  const r = await runPython("-c", [script], {
+    ...process.env,
+    A2A_LOG_HOME: process.env.A2A_LOG_HOME || p.home,
+    A2A_V2_DB: process.env.A2A_V2_DB || p.db,
+  });
+  if (!r.ok) {
+    return {
+      ok: false,
+      product_focus: "multi-agent-interaction",
+      db_ok: true,
+      db_path: p.db,
+      agents: [],
+      totals: emptyTotals(),
+      error: (r.stderr || r.stdout).slice(0, 2000),
+    };
+  }
+
+  let parsed: {
+    by: Record<string, Record<string, number>>;
+    oldest: Record<string, string | null>;
+    samples: Record<string, Array<Record<string, unknown>>>;
+  };
+  try {
+    parsed = JSON.parse(r.stdout) as typeof parsed;
+  } catch {
+    return {
+      ok: false,
+      product_focus: "multi-agent-interaction",
+      db_ok: true,
+      db_path: p.db,
+      agents: [],
+      totals: emptyTotals(),
+      error: "failed to parse board query",
+    };
+  }
+
+  const agentIds = new Set<string>([
+    ...regMap.keys(),
+    ...Object.keys(parsed.by || {}),
+  ]);
+  for (const id of retired) agentIds.delete(id);
+
+  const totals = emptyTotals();
+  const agents = [...agentIds].map((agent_id) => {
+    const countsRaw = parsed.by[agent_id] || {};
+    const counts = emptyTotals();
+    let other = 0;
+    for (const [st, n] of Object.entries(countsRaw)) {
+      if (st in counts) counts[st] = n;
+      else {
+        other += n;
+        counts.other += n;
+      }
+    }
+    const pending = counts.pending || 0;
+    const claimed = counts.claimed || 0;
+    const acked = counts.acked || 0;
+    const done = counts.done || 0;
+    const dead = counts.dead || 0;
+    const total_active = pending + claimed + acked;
+    for (const k of Object.keys(totals)) {
+      totals[k] = (totals[k] || 0) + (counts[k] || 0);
+    }
+    const meta = regMap.get(agent_id);
+    return {
+      agent_id,
+      in_registry: Boolean(meta),
+      host: meta?.host,
+      access: meta?.access,
+      owner: meta?.owner,
+      sla: meta?.sla,
+      notes: meta?.notes || meta?.reserved,
+      reserved: Boolean(meta?.reserved),
+      counts,
+      pending,
+      claimed,
+      acked,
+      done,
+      dead,
+      other,
+      total_active,
+      oldest_pending_ts: parsed.oldest?.[agent_id] ?? null,
+      sample_pending: parsed.samples?.[agent_id] || [],
+    };
+  });
+
+  // sort: most active first, then registry order-ish by pending
+  agents.sort((a, b) => {
+    if (b.total_active !== a.total_active) return b.total_active - a.total_active;
+    if (b.pending !== a.pending) return b.pending - a.pending;
+    return a.agent_id.localeCompare(b.agent_id);
+  });
+
+  return {
+    ok: true,
+    product_focus: "multi-agent-interaction",
+    db_ok: true,
+    db_path: p.db,
+    agents,
+    totals,
+  };
+}
+
 export function loadTopics(repoRoot: string): unknown {
   const p = eventLogPaths(repoRoot);
   if (!fs.existsSync(p.topics)) return { topics: {} };

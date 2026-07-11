@@ -2,15 +2,20 @@
 
 ## Product stance
 
-**A2A Event X is a standalone B/S product.**
+**A2A Event X is a standalone B/S product for multi-agent interaction management.**
+
+Ultimate goal: **manage agent↔agent work** (visibility, claim/lease, ops), not multi-CLI chat browsing.
 
 | Priority | Surface | Role |
 |----------|---------|------|
-| **P0** | **Browser UI + HTTP API** (`packages/webapp`) | Primary human interface |
-| P1 | Event Log toolkit (`packages/event-log`) | Cross-agent bus (from a2a-toolkit) |
-| P2 | CLI `a2ax` | Secondary / scripting only |
-| **Later** | MCP stdio | After product complete; optional agent client |
+| **P0** | **Agents board + Inbox** (`packages/webapp`) | Primary human interface |
+| **P0** | Event Log toolkit (`packages/event-log`) | Cross-agent bus (from a2a-toolkit) |
+| P2 | Sessions module | Context only (coding CLI history) |
+| P3 | CLI `a2ax` | Secondary / scripting |
+| **Later** | MCP stdio | After product complete |
 | Later | OpenClaw `mcpServers` wiring | Thin client only |
+
+**Locked 2026-07-12:** product = multi-agent interaction console; R1 = agent pending/claimed board; name stays **A2A Event X**.
 
 OpenClaw is **not** required to run Event X.
 

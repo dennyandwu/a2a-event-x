@@ -111,6 +111,62 @@ nav { display: flex; flex-direction: column; gap: 6px; }
 .card .ok { color: var(--accent-2); }
 .card .bad { color: var(--danger); }
 
+.chk {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--muted); cursor: pointer;
+}
+.kanban {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  padding: 8px 16px 24px;
+  overflow: auto;
+  align-content: start;
+}
+.agent-card {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.agent-card:hover {
+  border-color: #3b4c66;
+  box-shadow: 0 0 0 1px rgba(91, 157, 255, 0.12);
+}
+.agent-card.has-work {
+  border-color: rgba(91, 157, 255, 0.45);
+}
+.agent-card .ac-head {
+  display: flex; justify-content: space-between; gap: 8px; align-items: baseline;
+}
+.agent-card .ac-name { font-weight: 700; font-size: 15px; }
+.agent-card .ac-meta { color: var(--muted); font-size: 11px; margin-top: 4px; }
+.agent-card .pills {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+}
+.agent-card .stat {
+  font-size: 11px; font-family: var(--mono);
+  padding: 3px 8px; border-radius: 999px;
+  background: #243247; color: #c5d3e8;
+}
+.agent-card .stat.pending { background: rgba(255, 193, 7, 0.15); color: #ffc107; }
+.agent-card .stat.claimed { background: rgba(91, 157, 255, 0.18); color: var(--accent); }
+.agent-card .stat.acked { background: rgba(61, 214, 198, 0.15); color: var(--accent-2); }
+.agent-card .stat.dead { background: rgba(255, 107, 122, 0.15); color: var(--danger); }
+.agent-card .samples {
+  margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.agent-card .sample {
+  font-size: 11px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.agent-card .sample b { color: var(--text); font-weight: 600; }
+
 .view { flex: 1; min-height: 0; }
 .hidden { display: none !important; }
 .split { display: grid; grid-template-columns: 360px 1fr; height: 100%; }

@@ -7,6 +7,8 @@ let activeId = null;
 let events = [];
 let activeEventIdx = null;
 let inboxMeta = { mode: "v2" };
+/** @type {any} */
+let boardData = null;
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
@@ -26,16 +28,118 @@ async function api(path, opts) {
 
 function setView(name) {
   $$(".nav").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
-  $("#view-sessions").classList.toggle("hidden", name !== "sessions");
+  $("#view-agents").classList.toggle("hidden", name !== "agents");
   $("#view-events").classList.toggle("hidden", name !== "events");
+  $("#view-sessions").classList.toggle("hidden", name !== "sessions");
   $("#view-paths").classList.toggle("hidden", name !== "paths");
   $("#view-health").classList.toggle("hidden", name !== "health");
-  $("#session-filters").classList.toggle("hidden", name !== "sessions");
+  $("#agent-filters").classList.toggle("hidden", name !== "agents");
   $("#event-filters").classList.toggle("hidden", name !== "events");
+  $("#session-filters").classList.toggle("hidden", name !== "sessions");
   $("#path-filters").classList.toggle("hidden", name !== "paths");
+  if (name === "agents") loadBoard();
   if (name === "health") loadHealth();
   if (name === "paths") loadPaths();
   if (name === "events") ensureAgentsLoaded();
+  if (name === "sessions" && !sessions.length) loadSessions().catch(() => {});
+}
+
+// ── Agents board (primary) ────────────────────────────────
+
+async function loadBoard() {
+  const err = $("#board-error");
+  err.classList.add("hidden");
+  try {
+    boardData = await api("/api/agents/board");
+    renderBoard();
+  } catch (e) {
+    err.textContent = String(e.message || e);
+    err.classList.remove("hidden");
+    $("#agent-board").innerHTML = "";
+  }
+}
+
+function renderBoard() {
+  if (!boardData) return;
+  const hideIdle = $("#hide-idle").checked;
+  const hideReserved = $("#hide-reserved").checked;
+  const t = boardData.totals || {};
+  $("#board-totals").textContent =
+    `Σ pending ${t.pending || 0} · claimed ${t.claimed || 0} · acked ${t.acked || 0}` +
+    (boardData.db_ok ? "" : " · DB missing");
+
+  if (boardData.error) {
+    $("#board-error").textContent = boardData.error;
+    $("#board-error").classList.remove("hidden");
+  }
+
+  let agents = boardData.agents || [];
+  if (hideIdle) agents = agents.filter((a) => a.total_active > 0 || a.dead > 0);
+  if (hideReserved) agents = agents.filter((a) => !a.reserved);
+
+  const el = $("#agent-board");
+  el.innerHTML = "";
+  if (!agents.length) {
+    el.innerHTML = `<div class="muted" style="padding:12px">没有可显示的 agent。关闭「隐藏无积压」可看全注册表；或确认 v2 sqlite 有 deliveries。</div>`;
+    return;
+  }
+
+  for (const a of agents) {
+    const card = document.createElement("button");
+    card.className = "agent-card" + (a.total_active > 0 ? " has-work" : "");
+    const pills = [];
+    if (a.pending) pills.push(`<span class="stat pending">pending ${a.pending}</span>`);
+    if (a.claimed) pills.push(`<span class="stat claimed">claimed ${a.claimed}</span>`);
+    if (a.acked) pills.push(`<span class="stat acked">acked ${a.acked}</span>`);
+    if (a.dead) pills.push(`<span class="stat dead">dead ${a.dead}</span>`);
+    if (a.done) pills.push(`<span class="stat">done ${a.done}</span>`);
+    if (!pills.length) pills.push(`<span class="stat">idle</span>`);
+
+    const samples = (a.sample_pending || [])
+      .slice(0, 4)
+      .map((s) => {
+        const summary =
+          (s.payload && (s.payload.summary || s.payload.subject)) ||
+          s.topic ||
+          s.type ||
+          "delivery";
+        return `<div class="sample"><b>${escapeHtml(s.status)}</b> · ${escapeHtml(String(summary))} · ${escapeHtml(s.from || "?")}#${escapeHtml(String(s.seq ?? ""))}</div>`;
+      })
+      .join("");
+
+    card.innerHTML = `
+      <div class="ac-head">
+        <span class="ac-name">${escapeHtml(a.agent_id)}</span>
+        <span class="tag">${escapeHtml(a.host || (a.in_registry ? "registry" : "db-only"))}</span>
+      </div>
+      <div class="ac-meta">${escapeHtml([a.access, a.sla, a.notes].filter(Boolean).join(" · ") || "—")}</div>
+      <div class="pills">${pills.join("")}</div>
+      ${
+        a.oldest_pending_ts
+          ? `<div class="ac-meta">oldest pending: ${escapeHtml(a.oldest_pending_ts)}</div>`
+          : ""
+      }
+      ${samples ? `<div class="samples">${samples}</div>` : ""}
+    `;
+    card.onclick = () => openAgentInbox(a.agent_id);
+    el.appendChild(card);
+  }
+}
+
+function openAgentInbox(agentId) {
+  setView("events");
+  ensureAgentsLoaded().then(() => {
+    const sel = $("#agent");
+    // ensure option exists
+    if (![...sel.options].some((o) => o.value === agentId)) {
+      const opt = document.createElement("option");
+      opt.value = agentId;
+      opt.textContent = agentId;
+      sel.appendChild(opt);
+    }
+    sel.value = agentId;
+    loadEvents(false);
+  });
 }
 
 // ── Registry agents ───────────────────────────────────────
@@ -45,40 +149,28 @@ async function ensureAgentsLoaded() {
   if (sel.options.length > 0 && sel.dataset.loaded === "1") return;
   try {
     const data = await api("/api/registry/agents");
-    const agents = (data.agents || []).filter((a) => a.agent_id && !a.reserved);
+    const agents = data.agents || [];
     sel.innerHTML = "";
     for (const a of agents) {
+      if (!a.agent_id) continue;
       const opt = document.createElement("option");
       opt.value = a.agent_id;
-      opt.textContent = `${a.agent_id}${a.notes ? " — " + a.notes : ""}`;
+      opt.textContent = a.reserved
+        ? `${a.agent_id} (reserved)`
+        : `${a.agent_id}${a.notes ? " — " + a.notes : ""}`;
       sel.appendChild(opt);
     }
-    // also add test-agent if present as reserved for demo
-    const reserved = (data.agents || []).filter((a) => a.reserved);
-    for (const a of reserved) {
-      const opt = document.createElement("option");
-      opt.value = a.agent_id;
-      opt.textContent = `${a.agent_id} (reserved)`;
-      sel.appendChild(opt);
-    }
-    if (![...sel.options].some((o) => o.value === "issac")) {
-      const opt = document.createElement("option");
-      opt.value = "issac";
-      opt.textContent = "issac";
-      sel.appendChild(opt);
-    }
-    // prefer agent with pending if we know test-agent
-    if ([...sel.options].some((o) => o.value === "test-agent")) {
-      // keep issac default unless user picks
+    if (!sel.options.length) {
+      sel.innerHTML = `<option value="issac">issac</option><option value="test-agent">test-agent</option>`;
     }
     sel.dataset.loaded = "1";
-  } catch (e) {
+  } catch {
     sel.innerHTML = `<option value="issac">issac</option><option value="test-agent">test-agent</option>`;
     sel.dataset.loaded = "1";
   }
 }
 
-// ── Sessions ──────────────────────────────────────────────
+// ── Sessions (secondary) ──────────────────────────────────
 
 async function loadSessions() {
   const provider = $("#provider").value;
@@ -127,7 +219,7 @@ async function selectSession(id) {
     const data = await api(`/api/sessions/${encodeURIComponent(id)}/messages?limit=100`);
     box.innerHTML = "";
     if (!data.messages?.length) {
-      box.innerHTML = `<div class="muted">该 session 暂无可解析消息（或格式待适配）</div>`;
+      box.innerHTML = `<div class="muted">该 session 暂无可解析消息</div>`;
     } else {
       for (const m of data.messages) {
         const div = document.createElement("div");
@@ -171,7 +263,7 @@ async function doSearch() {
   }
 }
 
-// ── Event Log ─────────────────────────────────────────────
+// ── Event Log inbox ───────────────────────────────────────
 
 function toast(msg, kind) {
   const el = $("#event-toast");
@@ -196,11 +288,7 @@ async function loadEvents(claim) {
         body: JSON.stringify({ agent, limit: Number(limit) }),
       });
     } else {
-      const qs = new URLSearchParams({
-        agent,
-        limit,
-        mode,
-      });
+      const qs = new URLSearchParams({ agent, limit, mode });
       if (topic) qs.set("topic", topic);
       data = await api(`/api/events/inbox?${qs}`);
     }
@@ -224,14 +312,9 @@ async function loadEvents(claim) {
     $("#event-detail").classList.add("empty");
     $("#event-detail").textContent = events.length
       ? "选择一条 delivery"
-      : "inbox 为空。可试 agent=test-agent，或检查 Write Path 是否有 jsonl/sqlite。";
+      : "inbox 为空。回 Agents 看板看整体积压。";
     $("#event-ops").classList.add("hidden");
-    toast(
-      events.length
-        ? `已加载 ${events.length} 条 [${data.mode}]`
-        : "无 pending",
-      "ok",
-    );
+    toast(events.length ? `已加载 ${events.length} 条 [${data.mode}]` : "无 pending", "ok");
   } catch (e) {
     events = [];
     renderEventList();
@@ -280,15 +363,14 @@ function selectEvent(i) {
   box.classList.remove("empty");
   box.innerHTML = `<pre class="codeblock" style="margin:0;max-height:none">${escapeHtml(JSON.stringify(ev, null, 2))}</pre>`;
 
-  // show ops for v2 with token OR v1 with file/seq
   if (hasToken || isV1) {
     $("#event-ops").classList.remove("hidden");
-    $("#op-renew").classList.toggle("hidden", isV1);
-    $("#op-cancel").classList.toggle("hidden", isV1 && !hasToken);
-    // v1 cancel exists but keep simple: ack/done only for v1 in UI
     if (isV1) {
       $("#op-cancel").classList.add("hidden");
       $("#op-renew").classList.add("hidden");
+    } else {
+      $("#op-cancel").classList.remove("hidden");
+      $("#op-renew").classList.remove("hidden");
     }
   } else {
     $("#event-ops").classList.add("hidden");
@@ -302,7 +384,6 @@ async function eventOp(op) {
   const isV1 = Boolean(ev.v1 || ev.mode === "v1");
   toast(`${op}…`);
   try {
-    let data;
     if (isV1) {
       const file = String(ev.v1?.file || ev.source_file || ev.from || "");
       const seq = String(ev.v1?.seq ?? ev.seq ?? "");
@@ -316,7 +397,7 @@ async function eventOp(op) {
         const summary = $("#done-summary").value.trim();
         if (summary) body.summary = summary;
       }
-      data = await api(`/api/events/v1/${op}`, {
+      await api(`/api/events/v1/${op}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -334,36 +415,32 @@ async function eventOp(op) {
       if (op === "cancel") {
         body.reason = $("#done-summary").value.trim() || "cancelled via Event X UI";
       }
-      data = await api(`/api/events/${op}`, {
+      await api(`/api/events/${op}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
     }
     toast(`${op} ok`, "ok");
-    if (op === "done" || op === "cancel" || (isV1 && op === "ack")) {
-      // remove from list on terminal-ish ops; for v1 ack also remove from pending projection
-      if (op === "done" || op === "cancel" || isV1) {
-        events.splice(activeEventIdx, 1);
-        activeEventIdx = null;
-        renderEventList();
-        $("#event-ops").classList.add("hidden");
-        $("#event-detail").classList.add("empty");
-        $("#event-detail").textContent = "已处理，选择下一条";
-      }
+    if (op === "done" || op === "cancel" || isV1) {
+      events.splice(activeEventIdx, 1);
+      activeEventIdx = null;
+      renderEventList();
+      $("#event-ops").classList.add("hidden");
+      $("#event-detail").classList.add("empty");
+      $("#event-detail").textContent = "已处理，选择下一条";
     } else if (op === "ack") {
       ev._acked = true;
       selectEvent(activeEventIdx);
     } else if (op === "renew") {
       selectEvent(activeEventIdx);
     }
-    void data;
   } catch (e) {
     toast(String(e.message || e), "err");
   }
 }
 
-// ── Write path ────────────────────────────────────────────
+// ── Write path / Health ───────────────────────────────────
 
 async function loadPaths() {
   const data = await api("/api/events/status");
@@ -374,7 +451,11 @@ async function loadPaths() {
   cards.innerHTML = [
     card("A2A_LOG_HOME", paths.A2A_LOG_HOME, ex.home),
     card("events/*.jsonl", `${data.jsonl_count ?? 0} files`, ex.events_dir),
-    card("a2a-v2.sqlite", sql.ok ? `${sql.events} events · ${sql.deliveries} deliveries` : "missing", ex.db),
+    card(
+      "a2a-v2.sqlite",
+      sql.ok ? `${sql.events} events · ${sql.deliveries} deliveries` : "missing",
+      ex.db,
+    ),
     card("a2a-log.py (v1)", paths.A2A_LOG_CLI, ex.v1_script),
     card("a2a-v2.py", paths.v2_script, ex.v2_script),
   ].join("");
@@ -384,8 +465,6 @@ async function loadPaths() {
 function card(title, val, ok) {
   return `<div class="card"><h3>${escapeHtml(title)}</h3><div class="val ${ok ? "ok" : "bad"}">${escapeHtml(String(val))}${ok ? " ✓" : " ✗"}</div></div>`;
 }
-
-// ── Health ────────────────────────────────────────────────
 
 async function loadHealth() {
   try {
@@ -407,6 +486,9 @@ function escapeHtml(s) {
 // ── Wire ──────────────────────────────────────────────────
 
 $$(".nav").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
+$("#refresh-board").addEventListener("click", loadBoard);
+$("#hide-idle").addEventListener("change", renderBoard);
+$("#hide-reserved").addEventListener("change", renderBoard);
 $("#refresh").addEventListener("click", loadSessions);
 $("#provider").addEventListener("change", loadSessions);
 $("#project").addEventListener("keydown", (e) => e.key === "Enter" && loadSessions());
@@ -429,6 +511,5 @@ $("#copy-resume").addEventListener("click", async () => {
   }
 });
 
-loadSessions().catch((e) => {
-  $("#session-list").innerHTML = `<div class="muted" style="padding:12px">${escapeHtml(String(e))}</div>`;
-});
+// Default view: Agents board
+loadBoard();
