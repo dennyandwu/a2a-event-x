@@ -18,6 +18,7 @@
         </div>
         <nav>
           <button class="nav active" data-view="agents">Agents</button>
+          <button class="nav" data-view="workflows">Workflows</button>
           <button class="nav" data-view="events">Inbox</button>
           <button class="nav" data-view="sessions">Sessions</button>
           <button class="nav" data-view="paths">Write Path</button>
@@ -25,7 +26,7 @@
         </nav>
         <div class="sidebar-foot">
           <span class="pill">B/S</span>
-          <span class="muted">v0.4 · 交互优先</span>
+          <span class="muted">v0.6 · 交互优先</span>
         </div>
       </aside>
 
@@ -69,6 +70,9 @@
           <div class="filters hidden" id="path-filters">
             <button id="refresh-paths" class="btn">刷新写路径状态</button>
           </div>
+          <div class="filters hidden" id="workflow-filters">
+            <button id="refresh-workflows" class="btn">刷新 workflows</button>
+          </div>
         </header>
 
         <!-- Agents board (DEFAULT) -->
@@ -88,6 +92,9 @@
                 <h2 id="agent-detail-title">选择一个 agent</h2>
                 <div class="detail-actions">
                   <button id="agent-claim" class="btn hidden" title="Claim pending for this agent">Claim</button>
+                  <button id="agent-batch-done" class="btn hidden" title="Batch DONE selected claimed">Batch DONE</button>
+                  <button id="agent-requeue-dead" class="btn danger ghost hidden">Requeue dead</button>
+                  <button id="agent-compensate" class="btn ghost hidden" title="compensate-dispatches dry-run">Compensate?</button>
                   <button id="agent-open-inbox" class="btn ghost hidden">全屏 Inbox</button>
                 </div>
               </div>
@@ -111,6 +118,26 @@
                 <input id="aop-summary" type="text" placeholder="summary / reason" />
               </div>
               <div id="agent-ops-toast" class="toast muted"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Workflows / correlation -->
+        <section id="view-workflows" class="view hidden">
+          <div class="split">
+            <div class="list-pane">
+              <div class="pane-head">
+                <h2>Workflows</h2>
+                <span class="muted">by correlation_id</span>
+              </div>
+              <div id="workflow-list" class="list"></div>
+            </div>
+            <div class="detail-pane">
+              <div class="pane-head">
+                <h2 id="workflow-title">选择一个 workflow</h2>
+                <code id="workflow-meta" class="muted"></code>
+              </div>
+              <div id="workflow-timeline" class="timeline messages empty">correlation 时间线</div>
             </div>
           </div>
         </section>

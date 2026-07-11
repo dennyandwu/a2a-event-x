@@ -34,15 +34,18 @@ async function api(path, opts) {
 function setView(name) {
   $$(".nav").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
   $("#view-agents").classList.toggle("hidden", name !== "agents");
+  $("#view-workflows").classList.toggle("hidden", name !== "workflows");
   $("#view-events").classList.toggle("hidden", name !== "events");
   $("#view-sessions").classList.toggle("hidden", name !== "sessions");
   $("#view-paths").classList.toggle("hidden", name !== "paths");
   $("#view-health").classList.toggle("hidden", name !== "health");
   $("#agent-filters").classList.toggle("hidden", name !== "agents");
+  $("#workflow-filters").classList.toggle("hidden", name !== "workflows");
   $("#event-filters").classList.toggle("hidden", name !== "events");
   $("#session-filters").classList.toggle("hidden", name !== "sessions");
   $("#path-filters").classList.toggle("hidden", name !== "paths");
   if (name === "agents") loadBoard();
+  if (name === "workflows") loadWorkflows();
   if (name === "health") loadHealth();
   if (name === "paths") loadPaths();
   if (name === "events") ensureAgentsLoaded();
@@ -204,6 +207,9 @@ async function selectAgent(agentId) {
   renderBoard();
   $("#agent-detail-title").textContent = agentId;
   $("#agent-claim").classList.remove("hidden");
+  $("#agent-batch-done").classList.remove("hidden");
+  $("#agent-requeue-dead").classList.remove("hidden");
+  $("#agent-compensate").classList.remove("hidden");
   $("#agent-open-inbox").classList.remove("hidden");
   await loadAgentDetail(agentId, true);
 }
@@ -227,6 +233,8 @@ async function loadAgentDetail(agentId, reloadList) {
     $("#agent-claim").textContent = "Claim";
     $("#agent-claim").disabled = true;
   }
+  $("#agent-requeue-dead").disabled = !(meta?.dead > 0);
+  $("#agent-batch-done").disabled = false;
 
   if (!reloadList) return;
 
@@ -242,7 +250,7 @@ async function loadAgentDetail(agentId, reloadList) {
     $("#agent-ops").classList.add("hidden");
     $("#agent-delivery-detail").classList.add("empty");
     $("#agent-delivery-detail").textContent = agentDeliveries.length
-      ? "选中 delivery 后可操作"
+      ? "勾选 claimed 可 Batch DONE；点行查看详情"
       : "该筛选下无 delivery";
   } catch (e) {
     agentDeliveries = [];
@@ -259,20 +267,165 @@ function renderAgentDeliveries() {
     return;
   }
   agentDeliveries.forEach((d, i) => {
-    const btn = document.createElement("button");
-    btn.className = "item" + (i === selectedDeliveryIdx ? " active" : "");
+    const row = document.createElement("div");
+    row.className = "item" + (i === selectedDeliveryIdx ? " active" : "");
+    row.style.cursor = "pointer";
     const summary =
       (d.payload && (d.payload.summary || d.payload.subject)) || d.topic || d.type || "delivery";
-    btn.innerHTML = `
+    const canBatch = d.claim_token && (d.status === "claimed" || d.status === "acked");
+    row.innerHTML = `
       <div class="row1">
-        <span>${escapeHtml(String(summary))}</span>
+        <span style="display:flex;align-items:center;gap:6px;min-width:0">
+          ${
+            canBatch
+              ? `<input type="checkbox" class="chkbox batch-chk" data-i="${i}" ${d._selected ? "checked" : ""} />`
+              : `<span style="width:14px"></span>`
+          }
+          <span style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(String(summary))}</span>
+        </span>
         <span class="st-badge ${escapeHtml(d.status || "")}">${escapeHtml(d.status || "?")}</span>
       </div>
-      <div class="row2">${escapeHtml(d.from || "?")} · seq ${escapeHtml(String(d.seq ?? ""))} · att ${d.attempt_count ?? 0}${d.claim_token ? " · 🎫" : ""}</div>
+      <div class="row2">${escapeHtml(d.from || "?")} · seq ${escapeHtml(String(d.seq ?? ""))} · att ${d.attempt_count ?? 0}${d.claim_token ? " · 🎫" : ""}${d.correlation_id ? " · " + escapeHtml(d.correlation_id) : ""}</div>
     `;
-    btn.onclick = () => selectDelivery(i);
-    el.appendChild(btn);
+    const chk = row.querySelector(".batch-chk");
+    if (chk) {
+      chk.onclick = (e) => e.stopPropagation();
+      chk.onchange = () => {
+        d._selected = chk.checked;
+      };
+    }
+    row.onclick = () => selectDelivery(i);
+    el.appendChild(row);
   });
+}
+
+async function batchDoneSelected() {
+  if (!selectedAgentId) return;
+  const tokens = agentDeliveries
+    .filter((d) => d._selected && d.claim_token)
+    .map((d) => d.claim_token);
+  if (!tokens.length) {
+    agentToast("请先勾选带 token 的 claimed/acked 项", "err");
+    return;
+  }
+  const summary = $("#aop-summary").value.trim() || undefined;
+  agentToast(`Batch DONE ×${tokens.length}…`);
+  try {
+    const data = await api("/api/events/batch-done", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tokens, summary }),
+    });
+    const okN = (data.results || []).filter((r) => r.ok).length;
+    agentToast(`Batch DONE ${okN}/${tokens.length}`, okN === tokens.length ? "ok" : "err");
+    await loadBoard();
+    await loadAgentDetail(selectedAgentId, true);
+  } catch (e) {
+    agentToast(String(e.message || e), "err");
+  }
+}
+
+async function requeueDeadForAgent() {
+  if (!selectedAgentId) return;
+  if (!confirm(`将 ${selectedAgentId} 的 dead 重新入队为 pending？`)) return;
+  agentToast("Requeue dead…");
+  try {
+    const data = await api("/api/events/requeue-dead", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent: selectedAgentId, limit: 50 }),
+    });
+    agentToast(`requeued ${data.requeued ?? 0}`, data.ok ? "ok" : "err");
+    await loadBoard();
+    agentStatusFilter = "pending";
+    $$(".stab").forEach((b) => b.classList.toggle("active", b.dataset.st === "pending"));
+    await loadAgentDetail(selectedAgentId, true);
+  } catch (e) {
+    agentToast(String(e.message || e), "err");
+  }
+}
+
+async function compensateDryRun() {
+  if (!selectedAgentId) return;
+  agentToast("compensate dry-run…");
+  try {
+    const data = await api("/api/events/compensate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent: selectedAgentId, dry_run: true, limit: 20 }),
+    });
+    $("#agent-delivery-detail").classList.remove("empty");
+    $("#agent-delivery-detail").innerHTML = `<pre class="codeblock" style="margin:0;max-height:none">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+    agentToast("compensate dry-run 结果见下方", "ok");
+  } catch (e) {
+    agentToast(String(e.message || e), "err");
+  }
+}
+
+// ── Workflows ─────────────────────────────────────────────
+
+async function loadWorkflows() {
+  const el = $("#workflow-list");
+  el.innerHTML = `<div class="muted" style="padding:12px">加载…</div>`;
+  try {
+    const data = await api("/api/interactions?limit=40");
+    const list = data.correlations || [];
+    el.innerHTML = "";
+    if (!list.length) {
+      el.innerHTML = `<div class="muted" style="padding:12px">暂无 correlation 数据</div>`;
+      return;
+    }
+    for (const w of list) {
+      const btn = document.createElement("button");
+      btn.className = "item";
+      const st = w.delivery_status || {};
+      const stStr = Object.entries(st)
+        .map(([k, v]) => `${k}:${v}`)
+        .join(" ");
+      btn.innerHTML = `
+        <div class="row1">
+          <span>${escapeHtml(w.correlation_id)}</span>
+          <span class="tag">${w.event_count} evt</span>
+        </div>
+        <div class="row2">${escapeHtml(w.last_ts || "")} · ${escapeHtml(w.from_agents || "")} · ${escapeHtml(stStr)}</div>
+      `;
+      btn.onclick = () => openWorkflow(w.correlation_id);
+      el.appendChild(btn);
+    }
+  } catch (e) {
+    el.innerHTML = `<div class="muted" style="padding:12px">${escapeHtml(String(e.message || e))}</div>`;
+  }
+}
+
+async function openWorkflow(cid) {
+  $("#workflow-title").textContent = cid;
+  const box = $("#workflow-timeline");
+  box.classList.remove("empty");
+  box.innerHTML = `<div class="muted">加载时间线…</div>`;
+  try {
+    const data = await api(`/api/interactions/${encodeURIComponent(cid)}`);
+    const events = data.events || [];
+    $("#workflow-meta").textContent = `${events.length} rows`;
+    if (!events.length) {
+      box.innerHTML = `<div class="muted">空</div>`;
+      return;
+    }
+    box.innerHTML = "";
+    for (const e of events) {
+      const div = document.createElement("div");
+      const st = e.delivery_status || "event";
+      div.className = `tl-item ${escapeHtml(String(st))}`;
+      const summary =
+        (e.payload && (e.payload.summary || e.payload.subject)) || e.topic || e.type || "";
+      div.innerHTML = `
+        <div class="tl-head">${escapeHtml(e.type || "?")} · ${escapeHtml(String(summary))}</div>
+        <div class="tl-meta">${escapeHtml(e.ts || "")} · from ${escapeHtml(e.from || "?")} → ${escapeHtml(e.to_agent || "—")} · ${escapeHtml(String(st))} · seq ${escapeHtml(String(e.seq ?? ""))}</div>
+      `;
+      box.appendChild(div);
+    }
+  } catch (err) {
+    box.innerHTML = `<div class="muted">${escapeHtml(String(err.message || err))}</div>`;
+  }
 }
 
 function selectDelivery(i) {
@@ -654,6 +807,9 @@ $("#hide-reserved").addEventListener("change", renderBoard);
 $("#agent-claim").addEventListener("click", () => {
   if (selectedAgentId) claimAgent(selectedAgentId, 10);
 });
+$("#agent-batch-done").addEventListener("click", () => batchDoneSelected());
+$("#agent-requeue-dead").addEventListener("click", () => requeueDeadForAgent());
+$("#agent-compensate").addEventListener("click", () => compensateDryRun());
 $("#agent-open-inbox").addEventListener("click", () => {
   if (selectedAgentId) openAgentInbox(selectedAgentId);
 });
@@ -668,6 +824,7 @@ $("#aop-ack").addEventListener("click", () => agentDeliveryOp("ack"));
 $("#aop-done").addEventListener("click", () => agentDeliveryOp("done"));
 $("#aop-renew").addEventListener("click", () => agentDeliveryOp("renew"));
 $("#aop-cancel").addEventListener("click", () => agentDeliveryOp("cancel"));
+$("#refresh-workflows").addEventListener("click", loadWorkflows);
 
 $("#refresh").addEventListener("click", loadSessions);
 $("#provider").addEventListener("change", loadSessions);

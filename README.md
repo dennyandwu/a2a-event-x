@@ -42,7 +42,12 @@ Sessions（上下文，非主线）
 | Method | Path | 用途 |
 |--------|------|------|
 | GET | `/api/agents/board` | **按 agent 的 pending/claimed 看板** |
-| GET | `/api/agents/:id/deliveries` | agent 详情积压（`?status=pending,claimed,acked,dead`） |
+| GET | `/api/agents/:id/deliveries` | agent 详情积压 |
+| POST | `/api/events/batch-done` | 批量 DONE |
+| POST | `/api/events/requeue-dead` | dead → pending |
+| POST | `/api/events/compensate` | 补偿 dry-run |
+| GET | `/api/interactions` | workflow 列表 |
+| GET | `/api/interactions/:id` | workflow 时间线 |
 | GET | `/api/events/inbox` | 单 agent inbox（`mode=auto\|v2\|v1`） |
 
 | POST | `/api/events/claim\|ack\|done\|…` | 交互操作 |

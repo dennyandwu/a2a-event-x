@@ -595,6 +595,268 @@ print(json.dumps({"by": by, "oldest": oldest, "samples": samples}))
   };
 }
 
+/** Run a2a-log.py compensate-dispatches for an agent (optional dry-run). */
+export async function compensateAgent(
+  repoRoot: string,
+  opts: {
+    agent?: string;
+    topic?: string;
+    dryRun?: boolean;
+    limit?: number;
+    staleMinutes?: number;
+  },
+): Promise<{ status: number; body: unknown }> {
+  const args = ["compensate-dispatches", "--limit", String(opts.limit ?? 20)];
+  if (opts.agent) args.push("--agent", opts.agent);
+  if (opts.topic) args.push("--topic", opts.topic);
+  if (opts.staleMinutes != null) {
+    args.push("--stale-minutes", String(opts.staleMinutes));
+  }
+  // default dry-run unless explicitly dryRun: false
+  if (opts.dryRun !== false) args.push("--dry-run");
+  return runEventV1(repoRoot, args);
+}
+
+/** Batch v2 done by claim tokens. */
+export async function batchDone(
+  repoRoot: string,
+  tokens: string[],
+  summary?: string,
+): Promise<{
+  ok: boolean;
+  results: Array<{ token: string; ok: boolean; body: unknown }>;
+}> {
+  const results: Array<{ token: string; ok: boolean; body: unknown }> = [];
+  for (const token of tokens) {
+    const args = ["done", "--token", token];
+    if (summary) args.push("--summary", summary);
+    const r = await runEventV2(repoRoot, args);
+    results.push({
+      token: token.slice(0, 8) + "…",
+      ok: r.status === 200,
+      body: r.body,
+    });
+  }
+  return {
+    ok: results.every((x) => x.ok),
+    results,
+  };
+}
+
+/** Requeue dead deliveries back to pending (local ops). */
+export async function requeueDead(
+  repoRoot: string,
+  opts: { agent?: string; deliveryId?: number; limit?: number },
+): Promise<{ ok: boolean; requeued: number; error?: string }> {
+  const p = eventLogPaths(repoRoot);
+  if (!p.dbExists) return { ok: false, requeued: 0, error: "sqlite missing" };
+  const script = `
+import json, sqlite3
+from datetime import datetime, timezone
+db = ${JSON.stringify(p.db)}
+agent = ${JSON.stringify(opts.agent || null)}
+did = ${JSON.stringify(opts.deliveryId ?? null)}
+limit = ${opts.limit ?? 20}
+now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+c = sqlite3.connect(db)
+n = 0
+if did is not None:
+  cur = c.execute(
+    """UPDATE deliveries SET status='pending', claim_token=NULL, lease_expires_at=NULL,
+        attempt_count=0, updated_at=? WHERE delivery_id=? AND status='dead'""",
+    (now, did),
+  )
+  n = cur.rowcount
+else:
+  if agent:
+    ids = [r[0] for r in c.execute(
+      "SELECT delivery_id FROM deliveries WHERE to_agent=? AND status='dead' ORDER BY updated_at ASC LIMIT ?",
+      (agent, limit),
+    ).fetchall()]
+  else:
+    ids = [r[0] for r in c.execute(
+      "SELECT delivery_id FROM deliveries WHERE status='dead' ORDER BY updated_at ASC LIMIT ?",
+      (limit,),
+    ).fetchall()]
+  for i in ids:
+    cur = c.execute(
+      """UPDATE deliveries SET status='pending', claim_token=NULL, lease_expires_at=NULL,
+          attempt_count=0, updated_at=? WHERE delivery_id=? AND status='dead'""",
+      (now, i),
+    )
+    n += cur.rowcount
+c.commit()
+print(json.dumps({"requeued": n}))
+`;
+  const r = await runPython("-c", [script], {
+    ...process.env,
+    A2A_V2_DB: process.env.A2A_V2_DB || p.db,
+  });
+  if (!r.ok) return { ok: false, requeued: 0, error: r.stderr || r.stdout };
+  try {
+    const body = JSON.parse(r.stdout) as { requeued: number };
+    return { ok: true, requeued: body.requeued };
+  } catch {
+    return { ok: false, requeued: 0, error: "parse failed" };
+  }
+}
+
+/** Recent correlation workflows + detail timeline. */
+export async function listCorrelations(
+  repoRoot: string,
+  limit = 30,
+): Promise<{ ok: boolean; correlations: Array<Record<string, unknown>>; error?: string }> {
+  const p = eventLogPaths(repoRoot);
+  if (!p.dbExists) {
+    return { ok: false, correlations: [], error: "sqlite missing" };
+  }
+  const script = `
+import json, sqlite3
+db = ${JSON.stringify(p.db)}
+limit = ${Math.min(Math.max(limit, 1), 100)}
+c = sqlite3.connect(db)
+c.row_factory = sqlite3.Row
+rows = c.execute(
+  """SELECT correlation_id,
+            COUNT(*) AS event_count,
+            MIN(ts) AS first_ts,
+            MAX(ts) AS last_ts,
+            GROUP_CONCAT(DISTINCT type) AS types,
+            GROUP_CONCAT(DISTINCT from_agent) AS from_agents
+     FROM events
+     WHERE correlation_id IS NOT NULL AND correlation_id != ''
+     GROUP BY correlation_id
+     ORDER BY MAX(ts) DESC
+     LIMIT ?""",
+  (limit,),
+).fetchall()
+out = []
+for r in rows:
+  # delivery status rollup for events in this correlation
+  st = c.execute(
+    """SELECT d.status, COUNT(*) AS n
+       FROM deliveries d
+       JOIN events e ON e.source_file=d.source_file AND e.seq=d.seq
+       WHERE e.correlation_id=?
+       GROUP BY d.status""",
+    (r["correlation_id"],),
+  ).fetchall()
+  by_status = {x["status"]: x["n"] for x in st}
+  out.append({
+    "correlation_id": r["correlation_id"],
+    "event_count": r["event_count"],
+    "first_ts": r["first_ts"],
+    "last_ts": r["last_ts"],
+    "types": r["types"],
+    "from_agents": r["from_agents"],
+    "delivery_status": by_status,
+  })
+print(json.dumps({"correlations": out}))
+`;
+  const r = await runPython("-c", [script], {
+    ...process.env,
+    A2A_V2_DB: process.env.A2A_V2_DB || p.db,
+  });
+  if (!r.ok) {
+    return { ok: false, correlations: [], error: r.stderr || r.stdout };
+  }
+  try {
+    const body = JSON.parse(r.stdout) as {
+      correlations: Array<Record<string, unknown>>;
+    };
+    return { ok: true, correlations: body.correlations };
+  } catch {
+    return { ok: false, correlations: [], error: "parse failed" };
+  }
+}
+
+export async function correlationTimeline(
+  repoRoot: string,
+  correlationId: string,
+): Promise<{
+  ok: boolean;
+  correlation_id: string;
+  events: Array<Record<string, unknown>>;
+  error?: string;
+}> {
+  const p = eventLogPaths(repoRoot);
+  if (!p.dbExists) {
+    return {
+      ok: false,
+      correlation_id: correlationId,
+      events: [],
+      error: "sqlite missing",
+    };
+  }
+  const script = `
+import json, sqlite3
+db = ${JSON.stringify(p.db)}
+cid = ${JSON.stringify(correlationId)}
+c = sqlite3.connect(db)
+c.row_factory = sqlite3.Row
+rows = c.execute(
+  """SELECT e.event_id, e.source_file, e.seq, e.ts, e.from_agent, e.type, e.topic,
+            e.correlation_id, e.causation_id, e.payload,
+            d.delivery_id, d.to_agent, d.status AS delivery_status, d.attempt_count,
+            d.lease_expires_at, d.claim_token
+     FROM events e
+     LEFT JOIN deliveries d ON d.source_file=e.source_file AND d.seq=e.seq
+     WHERE e.correlation_id=?
+     ORDER BY e.ts ASC, e.seq ASC, d.delivery_id ASC""",
+  (cid,),
+).fetchall()
+out = []
+for s in rows:
+  payload = None
+  try:
+    payload = json.loads(s["payload"]) if s["payload"] else None
+  except Exception:
+    payload = s["payload"]
+  out.append({
+    "event_id": s["event_id"],
+    "source_file": s["source_file"],
+    "seq": s["seq"],
+    "ts": s["ts"],
+    "from": s["from_agent"],
+    "type": s["type"],
+    "topic": s["topic"],
+    "correlation_id": s["correlation_id"],
+    "causation_id": s["causation_id"],
+    "payload": payload,
+    "delivery_id": s["delivery_id"],
+    "to_agent": s["to_agent"],
+    "delivery_status": s["delivery_status"],
+    "attempt_count": s["attempt_count"],
+    "lease_expires_at": s["lease_expires_at"],
+    "has_token": bool(s["claim_token"]),
+  })
+print(json.dumps({"events": out}))
+`;
+  const r = await runPython("-c", [script], {
+    ...process.env,
+    A2A_V2_DB: process.env.A2A_V2_DB || p.db,
+  });
+  if (!r.ok) {
+    return {
+      ok: false,
+      correlation_id: correlationId,
+      events: [],
+      error: r.stderr || r.stdout,
+    };
+  }
+  try {
+    const body = JSON.parse(r.stdout) as { events: Array<Record<string, unknown>> };
+    return { ok: true, correlation_id: correlationId, events: body.events };
+  } catch {
+    return {
+      ok: false,
+      correlation_id: correlationId,
+      events: [],
+      error: "parse failed",
+    };
+  }
+}
+
 /**
  * List deliveries for one agent filtered by status (v2 sqlite).
  */

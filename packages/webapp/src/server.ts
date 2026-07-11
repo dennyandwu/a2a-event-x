@@ -13,12 +13,17 @@ import { fileURLToPath } from "node:url";
 import { SessionHub } from "@a2a-event-x/session-hub";
 import {
   agentsBoard,
+  batchDone,
+  compensateAgent,
+  correlationTimeline,
   eventLogPaths,
   eventLogStatus,
   inboxAuto,
   listAgentDeliveries,
+  listCorrelations,
   loadRegistryAgents,
   loadTopics,
+  requeueDead,
   runEventV1,
   runEventV2,
 } from "./event-log.js";
@@ -55,7 +60,7 @@ app.get("/api/health", async (c) => {
     product: "a2a-event-x",
     product_focus: "multi-agent-interaction",
     surface: "bs",
-    version: "0.5.0",
+    version: "0.6.0",
     ...h,
     eventLog: status,
   });
@@ -78,6 +83,59 @@ app.get("/api/agents/:id/deliveries", async (c) => {
   return c.json(
     await listAgentDeliveries(repoRoot, agentId, { status: statuses, limit }),
   );
+});
+
+/** Batch DONE for multiple claim tokens */
+app.post("/api/events/batch-done", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const tokens = Array.isArray(body.tokens)
+    ? body.tokens.map(String).filter(Boolean)
+    : [];
+  if (!tokens.length) return c.json({ error: "tokens_required" }, 400);
+  if (tokens.length > 50) return c.json({ error: "max_50_tokens" }, 400);
+  const summary =
+    typeof body.summary === "string" ? body.summary : undefined;
+  return c.json(await batchDone(repoRoot, tokens, summary));
+});
+
+/** Requeue dead → pending */
+app.post("/api/events/requeue-dead", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(
+    await requeueDead(repoRoot, {
+      agent: body.agent ? String(body.agent) : undefined,
+      deliveryId:
+        body.delivery_id != null ? Number(body.delivery_id) : undefined,
+      limit: body.limit != null ? Number(body.limit) : 20,
+    }),
+  );
+});
+
+/** compensate-dispatches (default dry-run) */
+app.post("/api/events/compensate", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const dryRun = body.dry_run !== false;
+  const { status, body: out } = await compensateAgent(repoRoot, {
+    agent: body.agent ? String(body.agent) : undefined,
+    topic: body.topic ? String(body.topic) : undefined,
+    dryRun,
+    limit: body.limit != null ? Number(body.limit) : 20,
+    staleMinutes:
+      body.stale_minutes != null ? Number(body.stale_minutes) : undefined,
+  });
+  return jsonStatus(c, status, out);
+});
+
+/** Correlation / workflow list */
+app.get("/api/interactions", async (c) => {
+  const limit = Number(c.req.query("limit") || 30);
+  return c.json(await listCorrelations(repoRoot, limit));
+});
+
+/** Correlation timeline */
+app.get("/api/interactions/:id", async (c) => {
+  const id = decodeURIComponent(c.req.param("id"));
+  return c.json(await correlationTimeline(repoRoot, id));
 });
 
 app.get("/api/sessions", async (c) => {
@@ -259,7 +317,7 @@ app.get("/api/meta", (c) =>
     primarySurface: "browser",
     defaultView: "agents",
     secondaryModules: ["inbox", "sessions", "write-path"],
-    version: "0.5.0",
+    version: "0.6.0",
     mcp: "deferred",
     providers: hub.providers(),
     docs: {

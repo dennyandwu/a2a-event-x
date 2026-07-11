@@ -202,6 +202,23 @@ nav { display: flex; flex-direction: column; gap: 6px; }
   .board-pane { border-right: none; border-bottom: 1px solid var(--border); max-height: 50vh; }
 }
 
+.item .row1 { align-items: center; }
+.item .chkbox { margin-right: 6px; }
+.timeline { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; overflow: auto; }
+.tl-item {
+  border-left: 3px solid var(--border);
+  padding: 8px 12px;
+  background: var(--panel);
+  border-radius: 0 10px 10px 0;
+}
+.tl-item.pending { border-left-color: #ffc107; }
+.tl-item.claimed { border-left-color: var(--accent); }
+.tl-item.acked { border-left-color: var(--accent-2); }
+.tl-item.done { border-left-color: #6bcb77; }
+.tl-item.dead { border-left-color: var(--danger); }
+.tl-item .tl-head { font-size: 12px; font-weight: 650; }
+.tl-item .tl-meta { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: var(--mono); }
+
 .view { flex: 1; min-height: 0; }
 .hidden { display: none !important; }
 .split { display: grid; grid-template-columns: 360px 1fr; height: 100%; }
