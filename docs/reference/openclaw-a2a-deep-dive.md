@@ -1,32 +1,59 @@
 ---
 title: "调研参考：openclaw-a2a-gateway × openclaw-a2a-plugin 深度解析"
 date: 2026-07-12
+updated: 2026-07-12
 status: active
 tags: [research, a2a, openclaw, design-reference]
 sources:
-  - https://github.com/win4r/openclaw-a2a-gateway (v1.5.1, MIT, ~540★)
-  - https://github.com/a2anet/openclaw-a2a-plugin (v0.2.0, Apache-2.0, ~26★)
+  - https://github.com/win4r/openclaw-a2a-gateway (v1.5.1, MIT, ~540★) — 作者 win4r，非 openclaw org
+  - https://github.com/a2anet/openclaw-a2a-plugin (v0.2.0, Apache-2.0, ~26★) — 作者 A2A Net，非 openclaw org
 related:
   - ../DECISIONS.md
   - A2A Event X B/S product (this monorepo)
 ---
 
-# 两个 OpenClaw A2A 参考项目深度解析
+# 两个 A2A 参考项目深度解析（OpenClaw *宿主上的* 社区实现）
 
-> 调研阶段选定的两份参考实现。二者都是 **OpenClaw 插件 + 官方 A2A 协议（@a2a-js/sdk）**，解决的是 **跨实例 agent 线上互通**，不是本机 multi-CLI session 浏览器。  
-> 本文目的：抽出**可迁移的设计思路**，明确**不可照搬的边界**，指导 A2A Event X 的后续演进。
+## 归属澄清（重要）
 
+**二者都不是 OpenClaw 官方项目**（不在 `github.com/openclaw/*` 核心仓内）。
+
+| 仓库 | 维护方 | 与 OpenClaw 的关系 | 更准确的身份 |
+|------|--------|-------------------|--------------|
+| [win4r/openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway) | **社区作者 win4r** | 以 **OpenClaw plugin** 形式安装/启动，强依赖 OpenClaw agent dispatch | 第三方 **A2A mesh 网关**，碰巧以 OpenClaw 为执行后端 |
+| [a2anet/openclaw-a2a-plugin](https://github.com/a2anet/openclaw-a2a-plugin) | **A2A Net**（`@a2anet/*`） | 同样是 OpenClaw plugin；核心逻辑在 **`@a2anet/a2a-utils`**，还驱动 [A2A MCP Server](https://github.com/a2anet/a2a-mcp) | **A2A 生态产品** 的 OpenClaw 适配层，不是 OpenClaw 一阶功能 |
+
+共同点：
+
+- 都实现/对接 **Google 系开放协议 [A2A](https://a2a-protocol.org)**（`@a2a-js/sdk`）
+- 都选择 **OpenClaw 当宿主**（plugin SDK、`openclaw.plugin.json`）
+- 都解决 **跨进程/跨机器 agent 互通**，不是 OpenClaw 内核本身
+
+差异一句话：
+
+- **Gateway** ≈ 「为 OpenClaw 机群做的 A2A 运维网关」（OpenClaw-centric mesh）
+- **Plugin** ≈ 「A2A Net 工具链插在 OpenClaw 上的插座」（A2A-centric，OpenClaw 只是 host 之一）
+
+> 调研阶段链接里带了 `openclaw-a2a-*` 前缀，容易误读成「OpenClaw 官方 A2A」。下文按 **社区插件 / A2A 生态** 表述，不再写成 “OpenClaw 的项目”。
+
+---
+
+# 深度解析
+
+> 两份参考都是 **宿主插件 + A2A 协议**，解决 **跨实例 agent 线上互通**，不是本机 multi-CLI session 浏览器。  
+> 目的：抽出**可迁移的设计思路**，明确**不可照搬的边界**，指导 A2A Event X。
 ---
 
 ## 0. 一句话对照
 
-| | **openclaw-a2a-gateway** (win4r) | **openclaw-a2a-plugin** (a2anet) | **A2A Event X（本项目）** |
-|--|----------------------------------|----------------------------------|---------------------------|
-| 问题 | 多台 OpenClaw 如何互相发现、路由、抗故障通信 | OpenClaw 如何作为 A2A client/server 收发消息与文件 | 本机多厂商 session/消息 + 本地 Event Log 如何被人用浏览器管 |
-| 协议 | A2A v0.3 + **自研 mesh 扩展** | 标准 A2A（薄封装 a2a-utils） | 自有 Event Log 契约 + Session Hub；**不实现 A2A 传输** |
-| 主表面 | 独立端口 18800 网关 + CLI/devtools | 挂在 OpenClaw gateway HTTP + `a2a_*` tools | **B/S :8787**（MCP 后置） |
-| 耦合 OpenClaw | 强（plugin + agent dispatch） | 强（plugin SDK / reply pipeline） | **弱**（独立产品；OpenClaw 只是可选 client） |
-
+| | **a2a-gateway** (win4r) | **a2a-plugin** (A2A Net) | **A2A Event X（本项目）** |
+|--|-------------------------|---------------------------|---------------------------|
+| 是否 OpenClaw 官方 | 否（社区） | 否（A2A Net） | 否（独立 monorepo） |
+| 问题 | 多台 OpenClaw **实例**如何互相发现、路由、抗故障通信 | 任意 A2A agent 如何与 **装了该插件的** OpenClaw 收发消息/文件 | 本机多厂商 session/消息 + 本地 Event Log 的人机 B/S |
+| 协议重心 | A2A v0.3 + **自研 mesh 扩展**（internal/ 非标准） | **标准 A2A**（薄封装 `@a2anet/a2a-utils`） | 自有 Event Log 契约 + Session Hub；**不实现 A2A 传输** |
+| 主表面 | 独立端口 18800 + CLI/devtools | 挂在宿主 gateway HTTP + `a2a_*` LLM tools | **B/S :8787**（MCP 后置） |
+| 与 OpenClaw | 强耦合执行后端 | 强耦合宿主；**逻辑库可复用到非 OpenClaw** | **弱**（OpenClaw 只是可选 client / 一种 session 源） |
+| 上游生态 | 偏 OpenClaw 运维社区 | 偏 A2A Net（utils / MCP server 同源） | 偏 urDAO toolkit + 本地 CLI 生态 |
 ---
 
 ## 1. openclaw-a2a-gateway（win4r）

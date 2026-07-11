@@ -51,9 +51,10 @@ OpenClaw is **not** required to run Event X.
 
 ## Research references
 
-Deep analysis of the two OpenClaw A2A projects from the discovery phase:
+Deep analysis of the two **community** A2A integrations named in discovery
+(neither is an official `openclaw/*` core project):
 
 - **Doc:** [reference/openclaw-a2a-deep-dive.md](./reference/openclaw-a2a-deep-dive.md)
 - **Repos:**
-  - https://github.com/win4r/openclaw-a2a-gateway — mesh gateway, resilience, audit
-  - https://github.com/a2anet/openclaw-a2a-plugin — standard tools surface, a2a-utils, safe defaults
+  - https://github.com/win4r/openclaw-a2a-gateway — third-party OpenClaw-hosted **A2A mesh gateway** (win4r)
+  - https://github.com/a2anet/openclaw-a2a-plugin — **A2A Net** OpenClaw adapter over `a2a-utils` / standard A2A
