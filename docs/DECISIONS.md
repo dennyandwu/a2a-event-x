@@ -47,3 +47,13 @@ OpenClaw is **not** required to run Event X.
 - Do not treat CLI as primary UX  
 - Do not block on OpenClaw / MCP  
 - Do not embed state into OpenClaw session store  
+- Do not reimplement full A2A transport mesh (see reference deep-dive)
+
+## Research references
+
+Deep analysis of the two OpenClaw A2A projects from the discovery phase:
+
+- **Doc:** [reference/openclaw-a2a-deep-dive.md](./reference/openclaw-a2a-deep-dive.md)
+- **Repos:**
+  - https://github.com/win4r/openclaw-a2a-gateway — mesh gateway, resilience, audit
+  - https://github.com/a2anet/openclaw-a2a-plugin — standard tools surface, a2a-utils, safe defaults
