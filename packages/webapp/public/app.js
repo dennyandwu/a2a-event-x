@@ -96,6 +96,41 @@ function boardToast(msg, kind) {
   if (kind) el.classList.add(kind);
 }
 
+/** Load / wipe multi-agent demo rows (sqlite source_file=demo). */
+async function seedDemo(opts = {}) {
+  const reset = opts.reset !== false && !opts.wipeOnly;
+  const wipeOnly = Boolean(opts.wipeOnly);
+  const label = wipeOnly ? "清除演示" : "加载演示数据";
+  boardToast(`${label}…`);
+  setLoading(true);
+  try {
+    const body = wipeOnly ? { wipe_only: true } : { reset: true };
+    const out = await api("/api/demo/seed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (wipeOnly) {
+      boardToast(`已清除演示行 · wiped ${out.wiped ?? "?"}`, "ok");
+    } else {
+      const by = out.by_status || {};
+      const nWf = (out.workflows || []).length;
+      boardToast(
+        `演示就绪 · ${out.deliveries || 0} deliveries (p${by.pending || 0}/c${by.claimed || 0}/d${by.dead || 0})` +
+          (nWf ? ` · Workflows×${nWf}` : "") +
+          " · 点卡片 Claim / DONE，或开 Workflows",
+        "ok",
+      );
+      if ($("#hide-idle")) $("#hide-idle").checked = true;
+    }
+    await loadBoard();
+  } catch (e) {
+    boardToast(String(e.message || e), "err");
+  } finally {
+    setLoading(false);
+  }
+}
+
 function agentToast(msg, kind) {
   const el = $("#agent-ops-toast");
   el.textContent = msg || "";
@@ -178,8 +213,43 @@ function renderBoard() {
 
   const el = $("#agent-board");
   el.innerHTML = "";
+  const tAll =
+    (t.pending || 0) + (t.claimed || 0) + (t.acked || 0) + (t.dead || 0) + (t.done || 0);
   if (!agents.length) {
-    el.innerHTML = `<div class="muted" style="padding:12px">没有可显示的 agent。关闭「隐藏无积压」可看全注册表。</div>`;
+    const noWork = tAll === 0;
+    el.innerHTML = noWork
+      ? `<div class="empty-state">
+          <div class="empty-title">本机几乎没有可调度的交互数据</div>
+          <p class="empty-body">
+            Event X 的主线是<strong>多 Agent 交互看板</strong>（pending / claimed / dead / workflow），
+            不是 Session 列表。当前 sqlite 里没有生产 dual-write 流量时，看板会空。
+          </p>
+          <ul class="empty-list">
+            <li>点「加载演示数据」→ 注入 5 条跨 agent 工作流，立刻试用 Claim / Batch DONE / Workflows</li>
+            <li>或把 <code>A2A_LOG_HOME</code> 指到 Mac Mini 生产目录再重启</li>
+            <li>关闭「隐藏无积压」可先看完整 agent 注册表</li>
+          </ul>
+          <div class="empty-actions">
+            <button type="button" class="btn" id="empty-seed">加载演示数据</button>
+            <button type="button" class="btn ghost" id="empty-show-all">显示全部 agent</button>
+          </div>
+        </div>`
+      : `<div class="empty-state compact">
+          <div class="empty-title">筛选后无 agent</div>
+          <p class="empty-body">关闭「隐藏无积压」或清空筛选，可看全注册表 / 全部状态。</p>
+          <div class="empty-actions">
+            <button type="button" class="btn ghost" id="empty-show-all">显示全部 agent</button>
+          </div>
+        </div>`;
+    const seedBtn = el.querySelector("#empty-seed");
+    if (seedBtn) seedBtn.onclick = () => seedDemo({ reset: true });
+    const showAll = el.querySelector("#empty-show-all");
+    if (showAll) {
+      showAll.onclick = () => {
+        $("#hide-idle").checked = false;
+        renderBoard();
+      };
+    }
     return;
   }
 
@@ -985,6 +1055,12 @@ function escapeHtml(s) {
 
 $$(".nav").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
 $("#refresh-board").addEventListener("click", loadBoard);
+$("#demo-seed")?.addEventListener("click", () => seedDemo({ reset: true }));
+$("#demo-wipe")?.addEventListener("click", () => {
+  if (confirm("清除 sqlite 中 source_file=demo（及 test）行？不影响生产 JSONL。")) {
+    seedDemo({ wipeOnly: true });
+  }
+});
 $("#hide-idle").addEventListener("change", renderBoard);
 $("#hide-reserved").addEventListener("change", renderBoard);
 $("#agent-claim").addEventListener("click", () => {

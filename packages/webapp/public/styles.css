@@ -123,6 +123,47 @@ nav { display: flex; flex-direction: column; gap: 6px; }
   overflow: auto;
   align-content: start;
 }
+.empty-state {
+  grid-column: 1 / -1;
+  margin: 12px 4px;
+  padding: 22px 24px;
+  border: 1px dashed rgba(91, 157, 255, 0.35);
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(91, 157, 255, 0.08), rgba(22, 29, 39, 0.6));
+  max-width: 640px;
+}
+.empty-state.compact {
+  padding: 14px 16px;
+  max-width: 420px;
+}
+.empty-title {
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+.empty-body {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.empty-list {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.empty-list code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+}
+.empty-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .agent-card {
   border: 1px solid var(--border);
   background: var(--panel);

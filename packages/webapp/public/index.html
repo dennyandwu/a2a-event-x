@@ -27,7 +27,7 @@
         </nav>
         <div class="sidebar-foot">
           <span class="pill">B/S</span>
-          <span class="muted">v0.7 · 交互优先</span>
+          <span class="muted">v0.9 · 交互优先</span>
         </div>
       </aside>
 
@@ -35,6 +35,8 @@
         <header class="topbar">
           <div class="filters" id="agent-filters">
             <button id="refresh-board" class="btn">刷新看板</button>
+            <button id="demo-seed" class="btn ghost" title="写入多 agent 演示工作流（sqlite source_file=demo）">加载演示数据</button>
+            <button id="demo-wipe" class="btn ghost danger" title="仅清除演示/测试行">清除演示</button>
             <input id="agent-filter" type="search" placeholder="筛选 agent…" style="min-width:120px" />
             <select id="agent-sort" title="sort">
               <option value="active">按活跃度</option>

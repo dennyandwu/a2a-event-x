@@ -26,6 +26,7 @@ import {
   requeueDead,
   runEventV1,
   runEventV2,
+  seedDemoData,
 } from "./event-log.js";
 import { readRecentOps, recordOp } from "./ops-audit.js";
 
@@ -61,11 +62,31 @@ app.get("/api/health", async (c) => {
     product: "a2a-event-x",
     product_focus: "multi-agent-interaction",
     surface: "bs",
-    version: "0.8.0",
+    version: "0.9.0",
     ...h,
     eventLog: status,
     opsAudit: readRecentOps(5),
   });
+});
+
+/**
+ * Load multi-agent demo data so the console is usable without production dual-write.
+ * POST { reset?: true, wipe_only?: true }
+ */
+app.post("/api/demo/seed", async (c) => {
+  const t0 = Date.now();
+  const body = await c.req.json().catch(() => ({}));
+  const { status, body: out } = await seedDemoData(repoRoot, {
+    reset: Boolean(body.reset),
+    wipeOnly: Boolean(body.wipe_only),
+  });
+  recordOp({
+    op: "demo_seed",
+    ok: status === 200,
+    detail: out as Record<string, unknown>,
+    duration_ms: Date.now() - t0,
+  });
+  return jsonStatus(c, status, out);
 });
 
 /** Recent ops audit (mutations) */
@@ -418,7 +439,7 @@ app.get("/api/meta", (c) =>
     primarySurface: "browser",
     defaultView: "agents",
     secondaryModules: ["inbox", "sessions", "write-path", "ops-audit"],
-    version: "0.8.0",
+    version: "0.9.0",
     mcp: "deferred",
     providers: hub.providers(),
     docs: {

@@ -24,7 +24,13 @@ npm run web
 
 打开 **http://127.0.0.1:8787/**  
 
-默认页：**Agents 看板** → 点击 agent 进入 Inbox。
+默认页：**Agents 看板** → 点击 agent 进入详情 / Inbox。
+
+本机若无生产 dual-write 数据，看板会空。可：
+
+1. 顶栏点 **「加载演示数据」**（写入 sqlite `source_file=demo` 的 5 条跨 agent 工作流），或  
+2. `python3 packages/event-log/scripts/seed-demo.py --reset`，或  
+3. 设置 `A2A_LOG_HOME` 指向 Mac Mini 等生产 Event Log 目录后重启。
 
 ## 架构
 
@@ -43,6 +49,7 @@ Sessions（上下文，非主线）
 |--------|------|------|
 | GET | `/api/agents/board` | **按 agent 的 pending/claimed 看板** |
 | GET | `/api/agents/:id/deliveries` | agent 详情积压 |
+| POST | `/api/demo/seed` | 加载/清除演示数据 `{ reset, wipe_only }` |
 | POST | `/api/events/batch-done` | 批量 DONE |
 | POST | `/api/events/requeue-dead` | dead → pending |
 | POST | `/api/events/compensate` | 补偿 dry-run |

@@ -16,7 +16,8 @@ export type AuditOp =
   | "requeue_dead"
   | "compensate"
   | "v1_ack"
-  | "v1_done";
+  | "v1_done"
+  | "demo_seed";
 
 export interface AuditEntry {
   ts: string;

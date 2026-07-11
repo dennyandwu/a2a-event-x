@@ -12,6 +12,31 @@ export function expandHome(p: string): string {
   return p;
 }
 
+/** Seed multi-agent demo rows into sqlite for empty-console trials. */
+export async function seedDemoData(
+  repoRoot: string,
+  opts: { reset?: boolean; wipeOnly?: boolean } = {},
+): Promise<{ status: number; body: unknown }> {
+  const script = path.join(repoRoot, "packages/event-log/scripts/seed-demo.py");
+  if (!fs.existsSync(script)) {
+    return {
+      status: 503,
+      body: { error: "seed_script_missing", path: script },
+    };
+  }
+  const p = eventLogPaths(repoRoot);
+  const args: string[] = [];
+  if (opts.wipeOnly) args.push("--wipe-only");
+  else if (opts.reset) args.push("--reset");
+  const r = await runPython(script, args, {
+    ...process.env,
+    A2A_LOG_HOME: process.env.A2A_LOG_HOME || p.home,
+    A2A_V2_DB: process.env.A2A_V2_DB || p.db,
+  });
+  const body = parseJsonOut(r.stdout, r.stderr);
+  return { status: r.ok ? 200 : 400, body };
+}
+
 export function eventLogPaths(repoRoot: string) {
   const v2 = path.join(repoRoot, "packages/event-log/a2a-v2.py");
   const v1 = path.join(repoRoot, "packages/event-log/scripts/a2a-log.py");
