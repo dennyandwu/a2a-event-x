@@ -81,7 +81,10 @@ except Exception:
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-BASE_DIR = os.path.expanduser("~/.openclaw/workspace/state/a2a-log")
+# Event X / toolkit shared root (override with A2A_LOG_HOME)
+BASE_DIR = os.path.expanduser(
+    os.environ.get("A2A_LOG_HOME", "~/.openclaw/workspace/state/a2a-log")
+)
 EVENTS_DIR = os.path.join(BASE_DIR, "events")
 CURSORS_DIR = os.path.join(BASE_DIR, "cursors")
 ROUTING_RULES_FILE = os.path.join(BASE_DIR, "routing-rules.json")

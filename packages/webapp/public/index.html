@@ -19,11 +19,12 @@
         <nav>
           <button class="nav active" data-view="sessions">Sessions</button>
           <button class="nav" data-view="events">Event Log</button>
+          <button class="nav" data-view="paths">Write Path</button>
           <button class="nav" data-view="health">Health</button>
         </nav>
         <div class="sidebar-foot">
           <span class="pill">B/S</span>
-          <span class="muted">v0.2 · MCP 后置</span>
+          <span class="muted">v0.3 · MCP 后置</span>
         </div>
       </aside>
 
@@ -43,10 +44,19 @@
             <button id="refresh" class="btn">刷新</button>
           </div>
           <div class="filters hidden" id="event-filters">
-            <input id="agent" type="text" value="issac" placeholder="agent id" />
-            <input id="event-limit" type="number" min="1" max="100" value="20" style="min-width:80px" title="limit" />
+            <select id="agent" title="agent from registry"></select>
+            <select id="event-mode" title="inbox mode">
+              <option value="auto">auto (v2→v1)</option>
+              <option value="v2">v2 only</option>
+              <option value="v1">v1 only</option>
+            </select>
+            <input id="event-topic" type="search" placeholder="topic 过滤（可选）" style="min-width:120px" />
+            <input id="event-limit" type="number" min="1" max="100" value="20" style="min-width:72px" />
             <button id="load-events" class="btn ghost">只读 inbox</button>
-            <button id="claim-events" class="btn">Claim 并加载</button>
+            <button id="claim-events" class="btn">Claim (v2)</button>
+          </div>
+          <div class="filters hidden" id="path-filters">
+            <button id="refresh-paths" class="btn">刷新写路径状态</button>
           </div>
         </header>
 
@@ -81,6 +91,7 @@
                 <h2>Inbox</h2>
                 <span id="event-count" class="muted">—</span>
               </div>
+              <div id="event-mode-banner" class="banner muted"></div>
               <div id="event-list" class="list"></div>
             </div>
             <div class="detail-pane">
@@ -89,18 +100,27 @@
                 <code id="event-detail-meta" class="muted"></code>
               </div>
               <div id="event-detail" class="messages empty">
-                Claim 后可 ACK / DONE / Renew / Cancel。租约 token 仅存在于本次会话内存。
+                auto 模式：先查 v2 sqlite，空则回退 v1 JSONL pending。
               </div>
               <div class="ops-bar hidden" id="event-ops">
                 <button id="op-ack" class="btn ghost">ACK</button>
                 <button id="op-renew" class="btn ghost">Renew</button>
                 <button id="op-done" class="btn">DONE</button>
                 <button id="op-cancel" class="btn danger">Cancel</button>
-                <input id="done-summary" type="text" placeholder="DONE summary（可选）" />
+                <input id="done-summary" type="text" placeholder="summary / reason（可选）" />
               </div>
               <div id="event-toast" class="toast muted"></div>
             </div>
           </div>
+        </section>
+
+        <section id="view-paths" class="view hidden">
+          <div class="pane-head">
+            <h2>Write path · 存储拓扑</h2>
+            <span class="muted">canonical JSONL + optional v2 sqlite</span>
+          </div>
+          <div id="paths-cards" class="cards"></div>
+          <pre id="paths-out" class="codeblock">加载中…</pre>
         </section>
 
         <section id="view-health" class="view hidden">

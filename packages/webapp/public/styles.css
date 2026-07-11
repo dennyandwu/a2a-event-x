@@ -94,6 +94,22 @@ nav { display: flex; flex-direction: column; gap: 6px; }
 .toast { padding: 8px 16px 14px; font-size: 12px; min-height: 1.2em; }
 .toast.err { color: var(--danger); }
 .toast.ok { color: var(--accent-2); }
+.banner {
+  margin: 0 8px 6px; padding: 8px 10px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--panel); font-size: 12px;
+}
+.cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px; padding: 0 16px 12px;
+}
+.card {
+  border: 1px solid var(--border); background: var(--panel);
+  border-radius: 12px; padding: 12px 14px;
+}
+.card h3 { margin: 0 0 6px; font-size: 13px; font-weight: 650; }
+.card .val { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+.card .ok { color: var(--accent-2); }
+.card .bad { color: var(--danger); }
 
 .view { flex: 1; min-height: 0; }
 .hidden { display: none !important; }

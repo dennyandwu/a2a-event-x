@@ -65,12 +65,17 @@ Browser  ──HTTP──►  webapp (:8787)
 | GET | `/api/sessions/:id` | session metadata |
 | GET | `/api/sessions/:id/messages` | paginated messages |
 | GET | `/api/search?q=` | cross-tool search |
-| GET | `/api/events/inbox?agent=` | pending inbox (`claim=1` optional) |
-| POST | `/api/events/claim` | `{ agent, limit, lease_s }` |
-| POST | `/api/events/ack` | `{ token }` |
-| POST | `/api/events/done` | `{ token, summary? }` |
+| GET | `/api/events/status` | write-path topology + sqlite stats |
+| GET | `/api/registry/agents` | agent registry |
+| GET | `/api/registry/topics` | topic registry |
+| GET | `/api/events/inbox` | `?agent=&mode=auto\|v2\|v1&claim=1` — auto falls back v1 when v2 empty |
+| POST | `/api/events/claim` | `{ agent, limit, lease_s }` (v2 only) |
+| POST | `/api/events/ack` | `{ token }` (v2) |
+| POST | `/api/events/done` | `{ token, summary? }` (v2) |
 | POST | `/api/events/renew` | `{ token, extend_s? }` |
 | POST | `/api/events/cancel` | `{ token, reason? }` |
+| POST | `/api/events/v1/ack` | `{ agent, seq, file }` JSONL path |
+| POST | `/api/events/v1/done` | `{ agent, seq, file, summary? }` |
 
 ### Event Log env
 
