@@ -73,12 +73,46 @@
 
         <!-- Agents board (DEFAULT) -->
         <section id="view-agents" class="view">
-          <div class="pane-head">
-            <h2>Agent 看板</h2>
-            <span class="muted">pending · claimed · acked · 点击卡片打开 Inbox</span>
+          <div class="split board-split">
+            <div class="board-pane">
+              <div class="pane-head">
+                <h2>Agent 看板</h2>
+                <span class="muted">pending · claimed · acked · dead · 点卡片开详情</span>
+              </div>
+              <div id="board-error" class="banner hidden"></div>
+              <div id="board-toast" class="toast muted"></div>
+              <div id="agent-board" class="kanban"></div>
+            </div>
+            <div class="detail-pane" id="agent-detail-pane">
+              <div class="pane-head">
+                <h2 id="agent-detail-title">选择一个 agent</h2>
+                <div class="detail-actions">
+                  <button id="agent-claim" class="btn hidden" title="Claim pending for this agent">Claim</button>
+                  <button id="agent-open-inbox" class="btn ghost hidden">全屏 Inbox</button>
+                </div>
+              </div>
+              <div id="agent-detail-meta" class="ac-meta" style="padding: 0 16px"></div>
+              <div class="status-tabs" id="agent-status-tabs">
+                <button class="stab active" data-st="active">活跃</button>
+                <button class="stab" data-st="pending">pending</button>
+                <button class="stab" data-st="claimed">claimed</button>
+                <button class="stab" data-st="acked">acked</button>
+                <button class="stab" data-st="dead">dead</button>
+              </div>
+              <div id="agent-delivery-list" class="list deliveries-list">
+                <div class="muted" style="padding:12px">从左侧选择 agent 查看积压</div>
+              </div>
+              <div id="agent-delivery-detail" class="messages empty" style="max-height:40%">选中 delivery 后可 ACK / DONE</div>
+              <div class="ops-bar hidden" id="agent-ops">
+                <button id="aop-ack" class="btn ghost">ACK</button>
+                <button id="aop-renew" class="btn ghost">Renew</button>
+                <button id="aop-done" class="btn">DONE</button>
+                <button id="aop-cancel" class="btn danger">Cancel</button>
+                <input id="aop-summary" type="text" placeholder="summary / reason" />
+              </div>
+              <div id="agent-ops-toast" class="toast muted"></div>
+            </div>
           </div>
-          <div id="board-error" class="banner hidden"></div>
-          <div id="agent-board" class="kanban"></div>
         </section>
 
         <section id="view-events" class="view hidden">

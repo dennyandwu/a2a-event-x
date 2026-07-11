@@ -6,9 +6,14 @@ let activeId = null;
 /** @type {Array<any>} */
 let events = [];
 let activeEventIdx = null;
-let inboxMeta = { mode: "v2" };
 /** @type {any} */
 let boardData = null;
+
+let selectedAgentId = null;
+/** @type {Array<any>} */
+let agentDeliveries = [];
+let selectedDeliveryIdx = null;
+let agentStatusFilter = "active";
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
@@ -44,7 +49,21 @@ function setView(name) {
   if (name === "sessions" && !sessions.length) loadSessions().catch(() => {});
 }
 
-// ── Agents board (primary) ────────────────────────────────
+function boardToast(msg, kind) {
+  const el = $("#board-toast");
+  el.textContent = msg || "";
+  el.classList.remove("err", "ok");
+  if (kind) el.classList.add(kind);
+}
+
+function agentToast(msg, kind) {
+  const el = $("#agent-ops-toast");
+  el.textContent = msg || "";
+  el.classList.remove("err", "ok");
+  if (kind) el.classList.add(kind);
+}
+
+// ── Agents board ──────────────────────────────────────────
 
 async function loadBoard() {
   const err = $("#board-error");
@@ -52,6 +71,10 @@ async function loadBoard() {
   try {
     boardData = await api("/api/agents/board");
     renderBoard();
+    if (selectedAgentId) {
+      // refresh detail counts without losing selection
+      await loadAgentDetail(selectedAgentId, false);
+    }
   } catch (e) {
     err.textContent = String(e.message || e);
     err.classList.remove("hidden");
@@ -65,7 +88,7 @@ function renderBoard() {
   const hideReserved = $("#hide-reserved").checked;
   const t = boardData.totals || {};
   $("#board-totals").textContent =
-    `Σ pending ${t.pending || 0} · claimed ${t.claimed || 0} · acked ${t.acked || 0}` +
+    `Σ pending ${t.pending || 0} · claimed ${t.claimed || 0} · acked ${t.acked || 0} · dead ${t.dead || 0}` +
     (boardData.db_ok ? "" : " · DB missing");
 
   if (boardData.error) {
@@ -80,13 +103,22 @@ function renderBoard() {
   const el = $("#agent-board");
   el.innerHTML = "";
   if (!agents.length) {
-    el.innerHTML = `<div class="muted" style="padding:12px">没有可显示的 agent。关闭「隐藏无积压」可看全注册表；或确认 v2 sqlite 有 deliveries。</div>`;
+    el.innerHTML = `<div class="muted" style="padding:12px">没有可显示的 agent。关闭「隐藏无积压」可看全注册表。</div>`;
     return;
   }
 
   for (const a of agents) {
-    const card = document.createElement("button");
-    card.className = "agent-card" + (a.total_active > 0 ? " has-work" : "");
+    const card = document.createElement("div");
+    card.className =
+      "agent-card" +
+      (a.total_active > 0 || a.dead > 0 ? " has-work" : "") +
+      (selectedAgentId === a.agent_id ? " active" : "");
+    // reuse .item.active border via custom
+    if (selectedAgentId === a.agent_id) {
+      card.style.boxShadow = "0 0 0 1px rgba(91,157,255,0.35) inset";
+      card.style.borderColor = "var(--accent)";
+    }
+
     const pills = [];
     if (a.pending) pills.push(`<span class="stat pending">pending ${a.pending}</span>`);
     if (a.claimed) pills.push(`<span class="stat claimed">claimed ${a.claimed}</span>`);
@@ -96,14 +128,14 @@ function renderBoard() {
     if (!pills.length) pills.push(`<span class="stat">idle</span>`);
 
     const samples = (a.sample_pending || [])
-      .slice(0, 4)
+      .slice(0, 3)
       .map((s) => {
         const summary =
           (s.payload && (s.payload.summary || s.payload.subject)) ||
           s.topic ||
           s.type ||
           "delivery";
-        return `<div class="sample"><b>${escapeHtml(s.status)}</b> · ${escapeHtml(String(summary))} · ${escapeHtml(s.from || "?")}#${escapeHtml(String(s.seq ?? ""))}</div>`;
+        return `<div class="sample"><b>${escapeHtml(s.status)}</b> · ${escapeHtml(String(summary))}</div>`;
       })
       .join("");
 
@@ -112,7 +144,7 @@ function renderBoard() {
         <span class="ac-name">${escapeHtml(a.agent_id)}</span>
         <span class="tag">${escapeHtml(a.host || (a.in_registry ? "registry" : "db-only"))}</span>
       </div>
-      <div class="ac-meta">${escapeHtml([a.access, a.sla, a.notes].filter(Boolean).join(" · ") || "—")}</div>
+      <div class="ac-meta">${escapeHtml([a.access, a.sla].filter(Boolean).join(" · ") || "—")}</div>
       <div class="pills">${pills.join("")}</div>
       ${
         a.oldest_pending_ts
@@ -120,38 +152,190 @@ function renderBoard() {
           : ""
       }
       ${samples ? `<div class="samples">${samples}</div>` : ""}
+      <div class="card-actions">
+        <button class="btn ghost btn-detail" type="button">详情</button>
+        ${
+          a.pending > 0
+            ? `<button class="btn btn-claim" type="button">Claim ${Math.min(a.pending, 10)}</button>`
+            : ""
+        }
+      </div>
     `;
-    card.onclick = () => openAgentInbox(a.agent_id);
+    card.querySelector(".btn-detail").onclick = (e) => {
+      e.stopPropagation();
+      selectAgent(a.agent_id);
+    };
+    const claimBtn = card.querySelector(".btn-claim");
+    if (claimBtn) {
+      claimBtn.onclick = async (e) => {
+        e.stopPropagation();
+        await claimAgent(a.agent_id, Math.min(a.pending, 10));
+      };
+    }
+    card.onclick = () => selectAgent(a.agent_id);
     el.appendChild(card);
   }
 }
 
-function openAgentInbox(agentId) {
-  setView("events");
-  ensureAgentsLoaded().then(() => {
-    const sel = $("#agent");
-    // ensure option exists
-    if (![...sel.options].some((o) => o.value === agentId)) {
-      const opt = document.createElement("option");
-      opt.value = agentId;
-      opt.textContent = agentId;
-      sel.appendChild(opt);
-    }
-    sel.value = agentId;
-    loadEvents(false);
+async function claimAgent(agentId, limit = 10) {
+  boardToast(`Claiming ${agentId} ×${limit}…`);
+  try {
+    const data = await api("/api/events/claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent: agentId, limit }),
+    });
+    const n = (data.events || []).length;
+    boardToast(`Claimed ${n} for ${agentId}`, "ok");
+    await loadBoard();
+    await selectAgent(agentId);
+    // switch filter to claimed
+    agentStatusFilter = "claimed";
+    $$(".stab").forEach((b) => b.classList.toggle("active", b.dataset.st === "claimed"));
+    await loadAgentDetail(agentId, true);
+  } catch (e) {
+    boardToast(String(e.message || e), "err");
+  }
+}
+
+async function selectAgent(agentId) {
+  selectedAgentId = agentId;
+  selectedDeliveryIdx = null;
+  renderBoard();
+  $("#agent-detail-title").textContent = agentId;
+  $("#agent-claim").classList.remove("hidden");
+  $("#agent-open-inbox").classList.remove("hidden");
+  await loadAgentDetail(agentId, true);
+}
+
+function statusQueryForFilter(filter) {
+  if (filter === "active") return "pending,claimed,acked";
+  return filter;
+}
+
+async function loadAgentDetail(agentId, reloadList) {
+  const meta = (boardData?.agents || []).find((a) => a.agent_id === agentId);
+  $("#agent-detail-meta").textContent = meta
+    ? [meta.host, meta.access, meta.sla, meta.notes].filter(Boolean).join(" · ") +
+      ` · p${meta.pending}/c${meta.claimed}/a${meta.acked}/d${meta.dead}`
+    : "";
+
+  if (meta?.pending > 0) {
+    $("#agent-claim").textContent = `Claim ${Math.min(meta.pending, 10)}`;
+    $("#agent-claim").disabled = false;
+  } else {
+    $("#agent-claim").textContent = "Claim";
+    $("#agent-claim").disabled = true;
+  }
+
+  if (!reloadList) return;
+
+  agentToast("加载 deliveries…");
+  try {
+    const st = statusQueryForFilter(agentStatusFilter);
+    const data = await api(
+      `/api/agents/${encodeURIComponent(agentId)}/deliveries?status=${encodeURIComponent(st)}&limit=50`,
+    );
+    agentDeliveries = data.deliveries || [];
+    renderAgentDeliveries();
+    agentToast(`${agentDeliveries.length} deliveries`, "ok");
+    $("#agent-ops").classList.add("hidden");
+    $("#agent-delivery-detail").classList.add("empty");
+    $("#agent-delivery-detail").textContent = agentDeliveries.length
+      ? "选中 delivery 后可操作"
+      : "该筛选下无 delivery";
+  } catch (e) {
+    agentDeliveries = [];
+    renderAgentDeliveries();
+    agentToast(String(e.message || e), "err");
+  }
+}
+
+function renderAgentDeliveries() {
+  const el = $("#agent-delivery-list");
+  el.innerHTML = "";
+  if (!agentDeliveries.length) {
+    el.innerHTML = `<div class="muted" style="padding:12px">无 delivery</div>`;
+    return;
+  }
+  agentDeliveries.forEach((d, i) => {
+    const btn = document.createElement("button");
+    btn.className = "item" + (i === selectedDeliveryIdx ? " active" : "");
+    const summary =
+      (d.payload && (d.payload.summary || d.payload.subject)) || d.topic || d.type || "delivery";
+    btn.innerHTML = `
+      <div class="row1">
+        <span>${escapeHtml(String(summary))}</span>
+        <span class="st-badge ${escapeHtml(d.status || "")}">${escapeHtml(d.status || "?")}</span>
+      </div>
+      <div class="row2">${escapeHtml(d.from || "?")} · seq ${escapeHtml(String(d.seq ?? ""))} · att ${d.attempt_count ?? 0}${d.claim_token ? " · 🎫" : ""}</div>
+    `;
+    btn.onclick = () => selectDelivery(i);
+    el.appendChild(btn);
   });
 }
 
-// ── Registry agents ───────────────────────────────────────
+function selectDelivery(i) {
+  selectedDeliveryIdx = i;
+  renderAgentDeliveries();
+  const d = agentDeliveries[i];
+  if (!d) return;
+  const box = $("#agent-delivery-detail");
+  box.classList.remove("empty");
+  box.innerHTML = `<pre class="codeblock" style="margin:0;max-height:none">${escapeHtml(JSON.stringify(d, null, 2))}</pre>`;
+
+  // ops: claim_token present (claimed/acked with token) OR pending needs claim first
+  if (d.claim_token && (d.status === "claimed" || d.status === "acked")) {
+    $("#agent-ops").classList.remove("hidden");
+  } else if (d.status === "pending") {
+    $("#agent-ops").classList.add("hidden");
+    agentToast("pending 需先 Claim 再 ACK/DONE", "");
+  } else if (d.status === "dead") {
+    $("#agent-ops").classList.add("hidden");
+    agentToast("dead-letter：需补偿/人工处理（后续接入 toolkit compensate）", "");
+  } else {
+    $("#agent-ops").classList.add("hidden");
+  }
+}
+
+async function agentDeliveryOp(op) {
+  const d = agentDeliveries[selectedDeliveryIdx];
+  if (!d?.claim_token) {
+    agentToast("需要 claim_token — 先点 Claim", "err");
+    return;
+  }
+  agentToast(`${op}…`);
+  try {
+    const body = { token: d.claim_token };
+    if (op === "done") {
+      const summary = $("#aop-summary").value.trim();
+      if (summary) body.summary = summary;
+    }
+    if (op === "cancel") {
+      body.reason = $("#aop-summary").value.trim() || "cancelled via agent board";
+    }
+    await api(`/api/events/${op}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    agentToast(`${op} ok`, "ok");
+    await loadBoard();
+    await loadAgentDetail(selectedAgentId, true);
+  } catch (e) {
+    agentToast(String(e.message || e), "err");
+  }
+}
+
+// ── Registry / Inbox (secondary full page) ────────────────
 
 async function ensureAgentsLoaded() {
   const sel = $("#agent");
   if (sel.options.length > 0 && sel.dataset.loaded === "1") return;
   try {
     const data = await api("/api/registry/agents");
-    const agents = data.agents || [];
     sel.innerHTML = "";
-    for (const a of agents) {
+    for (const a of data.agents || []) {
       if (!a.agent_id) continue;
       const opt = document.createElement("option");
       opt.value = a.agent_id;
@@ -170,7 +354,22 @@ async function ensureAgentsLoaded() {
   }
 }
 
-// ── Sessions (secondary) ──────────────────────────────────
+function openAgentInbox(agentId) {
+  setView("events");
+  ensureAgentsLoaded().then(() => {
+    const sel = $("#agent");
+    if (![...sel.options].some((o) => o.value === agentId)) {
+      const opt = document.createElement("option");
+      opt.value = agentId;
+      opt.textContent = agentId;
+      sel.appendChild(opt);
+    }
+    sel.value = agentId;
+    loadEvents(false);
+  });
+}
+
+// ── Sessions ──────────────────────────────────────────────
 
 async function loadSessions() {
   const provider = $("#provider").value;
@@ -263,7 +462,7 @@ async function doSearch() {
   }
 }
 
-// ── Event Log inbox ───────────────────────────────────────
+// ── Full-page Inbox ───────────────────────────────────────
 
 function toast(msg, kind) {
   const el = $("#event-toast");
@@ -293,28 +492,19 @@ async function loadEvents(claim) {
       data = await api(`/api/events/inbox?${qs}`);
     }
     events = data.events || [];
-    inboxMeta = { mode: data.mode || (claim ? "v2" : mode), note: data.note };
     const rem = data.count_remaining_pending;
     $("#event-count").textContent =
       `${events.length} shown` +
       (rem != null ? ` · ${rem} remaining` : "") +
       (data.claimed ? " · claimed" : "") +
       ` · ${data.mode || "?"}`;
-    $("#event-mode-banner").textContent =
-      data.note ||
-      (data.mode === "v1"
-        ? "v1 JSONL pending — 使用 v1 ACK/DONE"
-        : data.mode === "v2"
-          ? "v2 sqlite — Claim 后用 token 操作"
-          : "");
+    $("#event-mode-banner").textContent = data.note || "";
     activeEventIdx = null;
     renderEventList();
     $("#event-detail").classList.add("empty");
-    $("#event-detail").textContent = events.length
-      ? "选择一条 delivery"
-      : "inbox 为空。回 Agents 看板看整体积压。";
+    $("#event-detail").textContent = events.length ? "选择一条 delivery" : "inbox 为空";
     $("#event-ops").classList.add("hidden");
-    toast(events.length ? `已加载 ${events.length} 条 [${data.mode}]` : "无 pending", "ok");
+    toast(events.length ? `已加载 ${events.length} 条` : "无 pending", "ok");
   } catch (e) {
     events = [];
     renderEventList();
@@ -334,14 +524,12 @@ function renderEventList() {
     btn.className = "item" + (i === activeEventIdx ? " active" : "");
     const topic = ev.topic || ev.type || "event";
     const from = ev.from || "?";
-    const seq = ev.seq != null ? `seq ${ev.seq}` : "";
-    const badge = ev.claim_token ? "🎫" : ev.mode === "v1" || ev.v1 ? "v1" : "v2";
     btn.innerHTML = `
       <div class="row1">
         <span>${escapeHtml(topic)}</span>
-        <span class="tag">${escapeHtml(String(badge))} · ${escapeHtml(from)}</span>
+        <span class="tag">${ev.claim_token ? "🎫" : ev.mode || "v2"} · ${escapeHtml(from)}</span>
       </div>
-      <div class="row2">${escapeHtml(seq)} · attempts ${ev.attempt_count ?? 0} · ${escapeHtml(ev.ts || "")}</div>
+      <div class="row2">seq ${escapeHtml(String(ev.seq ?? ""))} · att ${ev.attempt_count ?? 0}</div>
     `;
     btn.onclick = () => selectEvent(i);
     el.appendChild(btn);
@@ -354,27 +542,17 @@ function selectEvent(i) {
   const ev = events[i];
   if (!ev) return;
   const isV1 = Boolean(ev.v1 || ev.mode === "v1");
-  const hasToken = Boolean(ev.claim_token);
   $("#event-detail-title").textContent = `${ev.type || "event"} · ${ev.topic || ""}`;
-  $("#event-detail-meta").textContent = isV1
-    ? `v1 · file=${ev.v1?.file || ev.source_file || ev.from} · seq ${ev.seq}`
-    : `v2 · ${ev.claim_token ? "token held" : "no token — Claim 后操作"}`;
+  $("#event-detail-meta").textContent = isV1 ? "v1" : ev.claim_token ? "token held" : "no token";
   const box = $("#event-detail");
   box.classList.remove("empty");
   box.innerHTML = `<pre class="codeblock" style="margin:0;max-height:none">${escapeHtml(JSON.stringify(ev, null, 2))}</pre>`;
-
-  if (hasToken || isV1) {
+  if (ev.claim_token || isV1) {
     $("#event-ops").classList.remove("hidden");
-    if (isV1) {
-      $("#op-cancel").classList.add("hidden");
-      $("#op-renew").classList.add("hidden");
-    } else {
-      $("#op-cancel").classList.remove("hidden");
-      $("#op-renew").classList.remove("hidden");
-    }
+    $("#op-renew").classList.toggle("hidden", isV1);
+    $("#op-cancel").classList.toggle("hidden", isV1);
   } else {
     $("#event-ops").classList.add("hidden");
-    toast("v2 只读：点「Claim (v2)」后再操作", "");
   }
 }
 
@@ -385,17 +563,17 @@ async function eventOp(op) {
   toast(`${op}…`);
   try {
     if (isV1) {
-      const file = String(ev.v1?.file || ev.source_file || ev.from || "");
-      const seq = String(ev.v1?.seq ?? ev.seq ?? "");
-      const agent = $("#agent").value.trim() || String(ev.v1?.agent || "");
       if (op !== "ack" && op !== "done") {
-        toast("v1 仅支持 ACK / DONE", "err");
+        toast("v1 仅 ACK/DONE", "err");
         return;
       }
-      const body = { agent, seq, file };
-      if (op === "done") {
-        const summary = $("#done-summary").value.trim();
-        if (summary) body.summary = summary;
+      const body = {
+        agent: $("#agent").value.trim(),
+        seq: String(ev.v1?.seq ?? ev.seq ?? ""),
+        file: String(ev.v1?.file || ev.source_file || ev.from || ""),
+      };
+      if (op === "done" && $("#done-summary").value.trim()) {
+        body.summary = $("#done-summary").value.trim();
       }
       await api(`/api/events/v1/${op}`, {
         method: "POST",
@@ -408,13 +586,8 @@ async function eventOp(op) {
         return;
       }
       const body = { token: ev.claim_token };
-      if (op === "done") {
-        const summary = $("#done-summary").value.trim();
-        if (summary) body.summary = summary;
-      }
-      if (op === "cancel") {
-        body.reason = $("#done-summary").value.trim() || "cancelled via Event X UI";
-      }
+      if (op === "done" && $("#done-summary").value.trim()) body.summary = $("#done-summary").value.trim();
+      if (op === "cancel") body.reason = $("#done-summary").value.trim() || "cancelled via inbox";
       await api(`/api/events/${op}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -422,33 +595,23 @@ async function eventOp(op) {
       });
     }
     toast(`${op} ok`, "ok");
-    if (op === "done" || op === "cancel" || isV1) {
-      events.splice(activeEventIdx, 1);
-      activeEventIdx = null;
-      renderEventList();
-      $("#event-ops").classList.add("hidden");
-      $("#event-detail").classList.add("empty");
-      $("#event-detail").textContent = "已处理，选择下一条";
-    } else if (op === "ack") {
-      ev._acked = true;
-      selectEvent(activeEventIdx);
-    } else if (op === "renew") {
-      selectEvent(activeEventIdx);
-    }
+    events.splice(activeEventIdx, 1);
+    activeEventIdx = null;
+    renderEventList();
+    $("#event-ops").classList.add("hidden");
   } catch (e) {
     toast(String(e.message || e), "err");
   }
 }
 
-// ── Write path / Health ───────────────────────────────────
+// ── Paths / Health ────────────────────────────────────────
 
 async function loadPaths() {
   const data = await api("/api/events/status");
-  const cards = $("#paths-cards");
   const ex = data.exists || {};
   const paths = data.paths || {};
   const sql = data.sqlite || {};
-  cards.innerHTML = [
+  $("#paths-cards").innerHTML = [
     card("A2A_LOG_HOME", paths.A2A_LOG_HOME, ex.home),
     card("events/*.jsonl", `${data.jsonl_count ?? 0} files`, ex.events_dir),
     card(
@@ -456,8 +619,7 @@ async function loadPaths() {
       sql.ok ? `${sql.events} events · ${sql.deliveries} deliveries` : "missing",
       ex.db,
     ),
-    card("a2a-log.py (v1)", paths.A2A_LOG_CLI, ex.v1_script),
-    card("a2a-v2.py", paths.v2_script, ex.v2_script),
+    card("a2a-log.py", paths.A2A_LOG_CLI, ex.v1_script),
   ].join("");
   $("#paths-out").textContent = JSON.stringify(data, null, 2);
 }
@@ -489,6 +651,24 @@ $$(".nav").forEach((b) => b.addEventListener("click", () => setView(b.dataset.vi
 $("#refresh-board").addEventListener("click", loadBoard);
 $("#hide-idle").addEventListener("change", renderBoard);
 $("#hide-reserved").addEventListener("change", renderBoard);
+$("#agent-claim").addEventListener("click", () => {
+  if (selectedAgentId) claimAgent(selectedAgentId, 10);
+});
+$("#agent-open-inbox").addEventListener("click", () => {
+  if (selectedAgentId) openAgentInbox(selectedAgentId);
+});
+$$(".stab").forEach((b) =>
+  b.addEventListener("click", async () => {
+    agentStatusFilter = b.dataset.st;
+    $$(".stab").forEach((x) => x.classList.toggle("active", x === b));
+    if (selectedAgentId) await loadAgentDetail(selectedAgentId, true);
+  }),
+);
+$("#aop-ack").addEventListener("click", () => agentDeliveryOp("ack"));
+$("#aop-done").addEventListener("click", () => agentDeliveryOp("done"));
+$("#aop-renew").addEventListener("click", () => agentDeliveryOp("renew"));
+$("#aop-cancel").addEventListener("click", () => agentDeliveryOp("cancel"));
+
 $("#refresh").addEventListener("click", loadSessions);
 $("#provider").addEventListener("change", loadSessions);
 $("#project").addEventListener("keydown", (e) => e.key === "Enter" && loadSessions());
@@ -501,9 +681,8 @@ $("#op-renew").addEventListener("click", () => eventOp("renew"));
 $("#op-cancel").addEventListener("click", () => eventOp("cancel"));
 $("#refresh-paths").addEventListener("click", loadPaths);
 $("#copy-resume").addEventListener("click", async () => {
-  const t = $("#resume-cmd").textContent;
   try {
-    await navigator.clipboard.writeText(t);
+    await navigator.clipboard.writeText($("#resume-cmd").textContent);
     $("#copy-resume").textContent = "已复制";
     setTimeout(() => ($("#copy-resume").textContent = "复制"), 1200);
   } catch {
@@ -511,5 +690,4 @@ $("#copy-resume").addEventListener("click", async () => {
   }
 });
 
-// Default view: Agents board
 loadBoard();

@@ -595,6 +595,119 @@ print(json.dumps({"by": by, "oldest": oldest, "samples": samples}))
   };
 }
 
+/**
+ * List deliveries for one agent filtered by status (v2 sqlite).
+ */
+export async function listAgentDeliveries(
+  repoRoot: string,
+  agentId: string,
+  opts: { status?: string[]; limit?: number } = {},
+): Promise<{
+  ok: boolean;
+  agent: string;
+  count: number;
+  deliveries: Array<Record<string, unknown>>;
+  error?: string;
+}> {
+  const p = eventLogPaths(repoRoot);
+  if (!p.dbExists) {
+    return {
+      ok: false,
+      agent: agentId,
+      count: 0,
+      deliveries: [],
+      error: "sqlite missing",
+    };
+  }
+  const statuses = opts.status?.length
+    ? opts.status
+    : ["pending", "claimed", "acked", "dead"];
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const script = `
+import json, sqlite3
+db = ${JSON.stringify(p.db)}
+agent = ${JSON.stringify(agentId)}
+statuses = ${JSON.stringify(statuses)}
+limit = ${limit}
+c = sqlite3.connect(db)
+c.row_factory = sqlite3.Row
+ph = ",".join("?" * len(statuses))
+sql = f"""
+SELECT d.delivery_id, d.source_file, d.seq, d.status, d.attempt_count,
+       d.claim_token, d.lease_expires_at, d.updated_at,
+       e.ts, e.from_agent, e.type, e.topic, e.payload, e.correlation_id, e.causation_id
+FROM deliveries d
+LEFT JOIN events e ON e.source_file=d.source_file AND e.seq=d.seq
+WHERE d.to_agent=? AND d.status IN ({ph})
+ORDER BY CASE d.status
+  WHEN 'claimed' THEN 0 WHEN 'acked' THEN 1 WHEN 'pending' THEN 2 WHEN 'dead' THEN 3 ELSE 4 END,
+  COALESCE(e.ts, d.updated_at) ASC
+LIMIT ?
+"""
+rows = c.execute(sql, [agent, *statuses, limit]).fetchall()
+out = []
+for s in rows:
+  payload = None
+  try:
+    payload = json.loads(s["payload"]) if s["payload"] else None
+  except Exception:
+    payload = s["payload"]
+  out.append({
+    "delivery_id": s["delivery_id"],
+    "source_file": s["source_file"],
+    "seq": s["seq"],
+    "status": s["status"],
+    "attempt_count": s["attempt_count"],
+    "claim_token": s["claim_token"],
+    "lease_expires_at": s["lease_expires_at"],
+    "updated_at": s["updated_at"],
+    "ts": s["ts"],
+    "from": s["from_agent"],
+    "type": s["type"],
+    "topic": s["topic"],
+    "correlation_id": s["correlation_id"],
+    "causation_id": s["causation_id"],
+    "payload": payload,
+    "mode": "v2",
+  })
+print(json.dumps({"deliveries": out, "count": len(out)}))
+`;
+  const r = await runPython("-c", [script], {
+    ...process.env,
+    A2A_LOG_HOME: process.env.A2A_LOG_HOME || p.home,
+    A2A_V2_DB: process.env.A2A_V2_DB || p.db,
+  });
+  if (!r.ok) {
+    return {
+      ok: false,
+      agent: agentId,
+      count: 0,
+      deliveries: [],
+      error: (r.stderr || r.stdout).slice(0, 2000),
+    };
+  }
+  try {
+    const body = JSON.parse(r.stdout) as {
+      deliveries: Array<Record<string, unknown>>;
+      count: number;
+    };
+    return {
+      ok: true,
+      agent: agentId,
+      count: body.count,
+      deliveries: body.deliveries,
+    };
+  } catch {
+    return {
+      ok: false,
+      agent: agentId,
+      count: 0,
+      deliveries: [],
+      error: "parse failed",
+    };
+  }
+}
+
 export function loadTopics(repoRoot: string): unknown {
   const p = eventLogPaths(repoRoot);
   if (!fs.existsSync(p.topics)) return { topics: {} };

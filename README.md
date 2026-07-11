@@ -42,7 +42,9 @@ Sessions（上下文，非主线）
 | Method | Path | 用途 |
 |--------|------|------|
 | GET | `/api/agents/board` | **按 agent 的 pending/claimed 看板** |
+| GET | `/api/agents/:id/deliveries` | agent 详情积压（`?status=pending,claimed,acked,dead`） |
 | GET | `/api/events/inbox` | 单 agent inbox（`mode=auto\|v2\|v1`） |
+
 | POST | `/api/events/claim\|ack\|done\|…` | 交互操作 |
 | GET | `/api/events/status` | 写路径拓扑 |
 | GET | `/api/sessions` | 附属 session 列表 |

@@ -16,6 +16,7 @@ import {
   eventLogPaths,
   eventLogStatus,
   inboxAuto,
+  listAgentDeliveries,
   loadRegistryAgents,
   loadTopics,
   runEventV1,
@@ -54,7 +55,7 @@ app.get("/api/health", async (c) => {
     product: "a2a-event-x",
     product_focus: "multi-agent-interaction",
     surface: "bs",
-    version: "0.4.0",
+    version: "0.5.0",
     ...h,
     eventLog: status,
   });
@@ -63,6 +64,20 @@ app.get("/api/health", async (c) => {
 /** Agent kanban: pending / claimed / acked per agent */
 app.get("/api/agents/board", async (c) => {
   return c.json(await agentsBoard(repoRoot));
+});
+
+/** Deliveries for one agent (detail drawer) */
+app.get("/api/agents/:id/deliveries", async (c) => {
+  const agentId = decodeURIComponent(c.req.param("id"));
+  const statusQ = c.req.query("status") || "pending,claimed,acked,dead";
+  const statuses = statusQ
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const limit = Number(c.req.query("limit") || 50);
+  return c.json(
+    await listAgentDeliveries(repoRoot, agentId, { status: statuses, limit }),
+  );
 });
 
 app.get("/api/sessions", async (c) => {
@@ -244,7 +259,7 @@ app.get("/api/meta", (c) =>
     primarySurface: "browser",
     defaultView: "agents",
     secondaryModules: ["inbox", "sessions", "write-path"],
-    version: "0.4.0",
+    version: "0.5.0",
     mcp: "deferred",
     providers: hub.providers(),
     docs: {
