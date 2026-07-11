@@ -23,7 +23,7 @@
         </nav>
         <div class="sidebar-foot">
           <span class="pill">B/S</span>
-          <span class="muted">MCP 后置</span>
+          <span class="muted">v0.2 · MCP 后置</span>
         </div>
       </aside>
 
@@ -44,7 +44,9 @@
           </div>
           <div class="filters hidden" id="event-filters">
             <input id="agent" type="text" value="issac" placeholder="agent id" />
-            <button id="load-events" class="btn">拉取 inbox</button>
+            <input id="event-limit" type="number" min="1" max="100" value="20" style="min-width:80px" title="limit" />
+            <button id="load-events" class="btn ghost">只读 inbox</button>
+            <button id="claim-events" class="btn">Claim 并加载</button>
           </div>
         </header>
 
@@ -73,11 +75,32 @@
         </section>
 
         <section id="view-events" class="view hidden">
-          <div class="pane-head">
-            <h2>Event Log inbox</h2>
-            <span class="muted">pull-first · 代理 a2a-v2 / toolkit</span>
+          <div class="split">
+            <div class="list-pane">
+              <div class="pane-head">
+                <h2>Inbox</h2>
+                <span id="event-count" class="muted">—</span>
+              </div>
+              <div id="event-list" class="list"></div>
+            </div>
+            <div class="detail-pane">
+              <div class="pane-head">
+                <h2 id="event-detail-title">选择一条 delivery</h2>
+                <code id="event-detail-meta" class="muted"></code>
+              </div>
+              <div id="event-detail" class="messages empty">
+                Claim 后可 ACK / DONE / Renew / Cancel。租约 token 仅存在于本次会话内存。
+              </div>
+              <div class="ops-bar hidden" id="event-ops">
+                <button id="op-ack" class="btn ghost">ACK</button>
+                <button id="op-renew" class="btn ghost">Renew</button>
+                <button id="op-done" class="btn">DONE</button>
+                <button id="op-cancel" class="btn danger">Cancel</button>
+                <input id="done-summary" type="text" placeholder="DONE summary（可选）" />
+              </div>
+              <div id="event-toast" class="toast muted"></div>
+            </div>
           </div>
-          <pre id="events-out" class="codeblock">点击「拉取 inbox」加载…</pre>
         </section>
 
         <section id="view-health" class="view hidden">

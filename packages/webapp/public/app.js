@@ -4,13 +4,24 @@ const $$ = (sel) => [...document.querySelectorAll(sel)];
 let sessions = [];
 let activeId = null;
 
-async function api(path) {
-  const res = await fetch(path);
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`${res.status} ${t}`);
+/** @type {Array<any>} */
+let events = [];
+let activeEventIdx = null;
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = { raw: text };
   }
-  return res.json();
+  if (!res.ok) {
+    const msg = data.error || data.detail || text || res.status;
+    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+  }
+  return data;
 }
 
 function setView(name) {
@@ -22,6 +33,8 @@ function setView(name) {
   $("#event-filters").classList.toggle("hidden", name !== "events");
   if (name === "health") loadHealth();
 }
+
+// ── Sessions ──────────────────────────────────────────────
 
 async function loadSessions() {
   const provider = $("#provider").value;
@@ -114,16 +127,145 @@ async function doSearch() {
   }
 }
 
-async function loadEvents() {
+// ── Event Log ─────────────────────────────────────────────
+
+function toast(msg, kind) {
+  const el = $("#event-toast");
+  el.textContent = msg || "";
+  el.classList.remove("err", "ok");
+  if (kind) el.classList.add(kind);
+}
+
+async function loadEvents(claim) {
   const agent = $("#agent").value.trim() || "issac";
-  $("#events-out").textContent = "加载中…";
+  const limit = $("#event-limit").value || "20";
+  toast(claim ? "Claiming…" : "Loading…");
   try {
-    const data = await api(`/api/events/inbox?agent=${encodeURIComponent(agent)}&limit=30`);
-    $("#events-out").textContent = JSON.stringify(data, null, 2);
+    let data;
+    if (claim) {
+      data = await api("/api/events/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent, limit: Number(limit) }),
+      });
+    } else {
+      data = await api(
+        `/api/events/inbox?agent=${encodeURIComponent(agent)}&limit=${encodeURIComponent(limit)}`,
+      );
+    }
+    events = data.events || [];
+    const rem = data.count_remaining_pending;
+    $("#event-count").textContent =
+      `${events.length} shown` +
+      (rem != null ? ` · pending left ${rem}` : "") +
+      (data.claimed ? " · claimed" : "");
+    activeEventIdx = null;
+    renderEventList();
+    $("#event-detail").classList.add("empty");
+    $("#event-detail").textContent = events.length
+      ? "选择一条 delivery"
+      : "inbox 为空（或 DB 未双写；确认 A2A_LOG_HOME / a2a-v2.sqlite）";
+    $("#event-ops").classList.add("hidden");
+    toast(
+      events.length
+        ? `已加载 ${events.length} 条${data.claimed ? "（含 claim_token）" : ""}`
+        : "无 pending",
+      "ok",
+    );
   } catch (e) {
-    $("#events-out").textContent = String(e.message || e);
+    events = [];
+    renderEventList();
+    toast(String(e.message || e), "err");
   }
 }
+
+function renderEventList() {
+  const el = $("#event-list");
+  el.innerHTML = "";
+  if (!events.length) {
+    el.innerHTML = `<div class="muted" style="padding:12px">无事件</div>`;
+    return;
+  }
+  events.forEach((ev, i) => {
+    const btn = document.createElement("button");
+    btn.className = "item" + (i === activeEventIdx ? " active" : "");
+    const topic = ev.topic || ev.type || "event";
+    const from = ev.from || "?";
+    const seq = ev.seq != null ? `seq ${ev.seq}` : "";
+    const token = ev.claim_token ? "🎫" : "";
+    btn.innerHTML = `
+      <div class="row1">
+        <span>${escapeHtml(topic)} ${token}</span>
+        <span class="tag">${escapeHtml(from)}</span>
+      </div>
+      <div class="row2">${escapeHtml(seq)} · attempts ${ev.attempt_count ?? 0} · ${escapeHtml(ev.ts || "")}</div>
+    `;
+    btn.onclick = () => selectEvent(i);
+    el.appendChild(btn);
+  });
+}
+
+function selectEvent(i) {
+  activeEventIdx = i;
+  renderEventList();
+  const ev = events[i];
+  if (!ev) return;
+  $("#event-detail-title").textContent = `${ev.type || "event"} · ${ev.topic || ""}`;
+  $("#event-detail-meta").textContent = `${ev.from || "?"} → seq ${ev.seq ?? "?"} ${ev.claim_token ? "· token held" : "· no token"}`;
+  const box = $("#event-detail");
+  box.classList.remove("empty");
+  box.innerHTML = `<pre class="codeblock" style="margin:0;max-height:none">${escapeHtml(JSON.stringify(ev, null, 2))}</pre>`;
+  if (ev.claim_token) {
+    $("#event-ops").classList.remove("hidden");
+  } else {
+    $("#event-ops").classList.add("hidden");
+    toast("只读视图无 claim_token — 点「Claim 并加载」后才能操作", "");
+  }
+}
+
+async function eventOp(op) {
+  const ev = events[activeEventIdx];
+  if (!ev?.claim_token) {
+    toast("需要 claim_token", "err");
+    return;
+  }
+  const token = ev.claim_token;
+  toast(`${op}…`);
+  try {
+    let body = { token };
+    if (op === "done") {
+      const summary = $("#done-summary").value.trim();
+      if (summary) body.summary = summary;
+    }
+    if (op === "cancel") {
+      body.reason = $("#done-summary").value.trim() || "cancelled via Event X UI";
+    }
+    const data = await api(`/api/events/${op}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    toast(`${op} ok: ${JSON.stringify(data).slice(0, 120)}`, "ok");
+    if (op === "done" || op === "cancel" || op === "ack") {
+      // remove finished from list for ack keep but mark; for done/cancel remove
+      if (op === "done" || op === "cancel") {
+        events.splice(activeEventIdx, 1);
+        activeEventIdx = null;
+        renderEventList();
+        $("#event-ops").classList.add("hidden");
+        $("#event-detail").classList.add("empty");
+        $("#event-detail").textContent = "已处理，选择下一条";
+      } else if (op === "ack") {
+        ev._acked = true;
+        selectEvent(activeEventIdx);
+      }
+    }
+  } catch (e) {
+    toast(String(e.message || e), "err");
+  }
+}
+
+// ── Health ────────────────────────────────────────────────
 
 async function loadHealth() {
   try {
@@ -142,12 +284,19 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;");
 }
 
+// ── Wire ──────────────────────────────────────────────────
+
 $$(".nav").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
 $("#refresh").addEventListener("click", loadSessions);
 $("#provider").addEventListener("change", loadSessions);
 $("#project").addEventListener("keydown", (e) => e.key === "Enter" && loadSessions());
 $("#search").addEventListener("keydown", (e) => e.key === "Enter" && doSearch());
-$("#load-events").addEventListener("click", loadEvents);
+$("#load-events").addEventListener("click", () => loadEvents(false));
+$("#claim-events").addEventListener("click", () => loadEvents(true));
+$("#op-ack").addEventListener("click", () => eventOp("ack"));
+$("#op-done").addEventListener("click", () => eventOp("done"));
+$("#op-renew").addEventListener("click", () => eventOp("renew"));
+$("#op-cancel").addEventListener("click", () => eventOp("cancel"));
 $("#copy-resume").addEventListener("click", async () => {
   const t = $("#resume-cmd").textContent;
   try {

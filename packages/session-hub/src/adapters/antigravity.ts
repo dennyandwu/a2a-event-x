@@ -15,10 +15,10 @@ import {
   readTextLimited,
   walkFiles,
 } from "./fs-utils.js";
+import { extractGenericMessage, humanTitleFromPath } from "./title-utils.js";
 
 /**
  * Antigravity CLI — best-effort local store discovery.
- * Paths vary; default roots under ~/.antigravity and ~/.config/antigravity.
  */
 export class AntigravityAdapter implements SessionAdapter {
   id = "antigravity-cli" as const;
@@ -53,19 +53,20 @@ export class AntigravityAdapter implements SessionAdapter {
       for (const file of files) {
         const st = await fs.stat(file);
         if (st.size < 16) continue;
-        const nativeId = path.basename(file).replace(/\.(jsonl|json)$/, "");
+        const rel = path.relative(root, file).replace(/\\/g, "/");
+        const nativeId = rel.replace(/\.(jsonl|json)$/, "") || path.basename(file);
         sessions.push({
           id: `antigravity-cli:${nativeId}`,
           provider: "antigravity-cli",
           nativeId,
-          title: nativeId,
+          title: humanTitleFromPath(file, nativeId),
           projectPath: path.dirname(file),
           updatedAt: mtimeIso(st.mtimeMs),
           createdAt: mtimeIso(st.birthtimeMs || st.mtimeMs),
           status: "unknown",
           resume: {
             kind: "command",
-            value: `agy # resume session ${nativeId}`,
+            value: `agy # resume ${path.basename(file)}`,
           },
           sourcePaths: [file],
         });
@@ -87,11 +88,12 @@ export class AntigravityAdapter implements SessionAdapter {
     for (const line of text.split("\n").filter(Boolean)) {
       try {
         const row = JSON.parse(line) as Record<string, unknown>;
-        const body = String(row.content || row.text || row.message || "");
-        if (!body) continue;
+        const m = extractGenericMessage(row);
+        if (!m) continue;
         messages.push({
-          role: String(row.role || "").includes("user") ? "user" : "assistant",
-          text: body.slice(0, maxChars),
+          role: m.role,
+          ts: m.ts,
+          text: m.text.slice(0, maxChars),
         });
       } catch {
         /* skip */

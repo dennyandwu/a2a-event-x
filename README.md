@@ -56,22 +56,34 @@ Browser  ──HTTP──►  webapp (:8787)
                    a2a-v2.py
 ```
 
-## API (v0.1)
+## API (v0.2)
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/health` | adapters + toolkit flags |
+| GET | `/api/health` | adapters + toolkit paths |
 | GET | `/api/sessions` | `?provider=&project=&limit=` |
 | GET | `/api/sessions/:id` | session metadata |
 | GET | `/api/sessions/:id/messages` | paginated messages |
 | GET | `/api/search?q=` | cross-tool search |
-| GET | `/api/events/inbox?agent=` | Event Log inbox proxy |
+| GET | `/api/events/inbox?agent=` | pending inbox (`claim=1` optional) |
+| POST | `/api/events/claim` | `{ agent, limit, lease_s }` |
+| POST | `/api/events/ack` | `{ token }` |
+| POST | `/api/events/done` | `{ token, summary? }` |
+| POST | `/api/events/renew` | `{ token, extend_s? }` |
+| POST | `/api/events/cancel` | `{ token, reason? }` |
+
+### Event Log env
+
+See `packages/event-log/config.env.example`:
+
+- `A2A_LOG_HOME` — state root (default `~/.openclaw/workspace/state/a2a-log`)
+- `A2A_LOG_CLI` — v1 writer (default monorepo `scripts/a2a-log.py`)
+- `A2A_V2_DB` — optional sqlite override
 
 ## Deferred
 
 - **MCP** server packaging and OpenClaw `mcpServers` wiring  
 - Projector auto-write into Event Log  
-- Full UI for claim/ack/done (inbox JSON first)  
 
 ## License
 

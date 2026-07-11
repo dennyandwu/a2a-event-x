@@ -18,8 +18,16 @@ import json
 import os
 import sqlite3
 
-BASE_DIR = os.path.expanduser("~/.openclaw/workspace/state/a2a-log")
-DB_PATH = os.path.join(BASE_DIR, "db", "a2a-v2.sqlite")
+# Unified env (Event X B/S + toolkit share the same state root):
+#   A2A_LOG_HOME  — state root (default ~/.openclaw/workspace/state/a2a-log)
+#   A2A_V2_DB     — explicit sqlite path override
+BASE_DIR = os.path.expanduser(
+    os.environ.get("A2A_LOG_HOME", "~/.openclaw/workspace/state/a2a-log")
+)
+DB_PATH = os.environ.get(
+    "A2A_V2_DB",
+    os.path.join(BASE_DIR, "db", "a2a-v2.sqlite"),
+)
 
 RESOLUTION_STATUS = {
     "task.acked": "acked",

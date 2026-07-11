@@ -75,7 +75,25 @@ nav { display: flex; flex-direction: column; gap: 6px; }
 .btn.ghost {
   background: transparent; color: var(--text); border: 1px solid var(--border);
 }
+.btn.danger {
+  background: rgba(255, 107, 122, 0.2);
+  color: var(--danger);
+  border: 1px solid rgba(255, 107, 122, 0.45);
+}
 .btn:hover { filter: brightness(1.05); }
+.ops-bar {
+  border-top: 1px solid var(--border); padding: 10px 16px;
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  background: var(--panel);
+}
+.ops-bar input {
+  flex: 1; min-width: 160px;
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 10px;
+}
+.toast { padding: 8px 16px 14px; font-size: 12px; min-height: 1.2em; }
+.toast.err { color: var(--danger); }
+.toast.ok { color: var(--accent-2); }
 
 .view { flex: 1; min-height: 0; }
 .hidden { display: none !important; }

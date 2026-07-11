@@ -15,15 +15,13 @@ import {
   readTextLimited,
   walkFiles,
 } from "./fs-utils.js";
+import { extractGenericMessage, humanTitleFromPath } from "./title-utils.js";
 
 /**
- * Grok Build / Grok CLI — layout still evolving.
- * Best-effort scan of ~/.grok for session-like JSON/JSONL.
- * Override roots via constructor when paths are confirmed.
+ * Grok Build — sessions under ~/.grok/sessions/<encoded-cwd>/*.jsonl
  */
 export class GrokBuildAdapter implements SessionAdapter {
   id = "grok-build" as const;
-  // Prefer sessions dir only to avoid double-scanning ~/.grok + ~/.grok/sessions
   constructor(
     private roots: string[] = [DEFAULT_ROOTS["grok-build"][0]].filter(Boolean),
   ) {}
@@ -36,8 +34,8 @@ export class GrokBuildAdapter implements SessionAdapter {
     return {
       ok: present.length > 0,
       detail: present.length
-        ? `found ${present.length} root(s) (paths may need tuning)`
-        : "no ~/.grok root — configure adapter roots",
+        ? `found ${present.length} root(s)`
+        : "no ~/.grok/sessions — configure adapter roots",
       rootPaths: present,
     };
   }
@@ -51,26 +49,35 @@ export class GrokBuildAdapter implements SessionAdapter {
         match: (n) =>
           n.endsWith(".jsonl") ||
           (n.endsWith(".json") &&
-            (n.includes("session") || n.includes("chat") || n.includes("history"))),
+            (n.includes("session") ||
+              n.includes("chat") ||
+              n.includes("history") ||
+              n === "updates.json" ||
+              n === "events.json")),
       });
       for (const file of files) {
         if (file.includes("node_modules")) continue;
+        // skip noisy internal logs that are not chat transcripts
+        const base = path.basename(file);
+        if (base === "events.jsonl" || base === "events.json") continue;
+
         const st = await fs.stat(file);
         if (st.size < 32) continue;
         const rel = path.relative(root, file).replace(/\\/g, "/");
         const nativeId = rel.replace(/\.(jsonl|json)$/, "");
+        const title = humanTitleFromPath(file, nativeId);
         sessions.push({
           id: `grok-build:${nativeId}`,
           provider: "grok-build",
           nativeId,
-          title: nativeId,
+          title,
           projectPath: path.dirname(file),
           updatedAt: mtimeIso(st.mtimeMs),
           createdAt: mtimeIso(st.birthtimeMs || st.mtimeMs),
           status: "unknown",
           resume: {
             kind: "command",
-            value: `# TODO: confirm grok resume CLI for ${nativeId}`,
+            value: `grok # open session in Grok Build TUI — id ${path.basename(path.dirname(file))}`,
           },
           sourcePaths: [file],
         });
@@ -92,26 +99,29 @@ export class GrokBuildAdapter implements SessionAdapter {
     for (const line of text.split("\n").filter(Boolean)) {
       try {
         const row = JSON.parse(line) as Record<string, unknown>;
-        const body = String(row.content || row.text || row.message || "");
-        if (!body) continue;
+        const m = extractGenericMessage(row);
+        if (!m) continue;
         messages.push({
-          role: String(row.role || "").includes("user") ? "user" : "assistant",
-          text: body.slice(0, maxChars),
+          role: m.role,
+          ts: m.ts,
+          text: m.text.slice(0, maxChars),
         });
       } catch {
-        /* skip non-jsonl */
+        /* skip */
       }
     }
     if (!messages.length && text.trim().startsWith("{")) {
       try {
         const row = JSON.parse(text) as Record<string, unknown>;
-        const items = (row.messages || []) as unknown[];
+        const items = (row.messages || row.items || []) as unknown[];
         for (const it of items) {
           if (!it || typeof it !== "object") continue;
-          const m = it as Record<string, unknown>;
+          const m = extractGenericMessage(it as Record<string, unknown>);
+          if (!m) continue;
           messages.push({
-            role: String(m.role || "").includes("user") ? "user" : "assistant",
-            text: String(m.content || m.text || "").slice(0, maxChars),
+            role: m.role,
+            ts: m.ts,
+            text: m.text.slice(0, maxChars),
           });
         }
       } catch {
@@ -129,7 +139,7 @@ export class GrokBuildAdapter implements SessionAdapter {
       const file = s.sourcePaths[0];
       if (!file) continue;
       try {
-        const text = await readTextLimited(file, 300_000);
+        const text = await readTextLimited(file, 500_000);
         const idx = text.toLowerCase().indexOf(q);
         if (idx >= 0) {
           hits.push({
