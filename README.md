@@ -48,6 +48,7 @@ Sessions（上下文，非主线）
 | POST | `/api/events/compensate` | 补偿 dry-run |
 | GET | `/api/interactions` | workflow 列表 |
 | GET | `/api/interactions/:id` | workflow 时间线 |
+| GET | `/api/ops/audit` | 操作审计 JSONL 最近条目 |
 | GET | `/api/events/inbox` | 单 agent inbox（`mode=auto\|v2\|v1`） |
 
 | POST | `/api/events/claim\|ack\|done\|…` | 交互操作 |

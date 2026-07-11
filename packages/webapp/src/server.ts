@@ -27,6 +27,7 @@ import {
   runEventV1,
   runEventV2,
 } from "./event-log.js";
+import { readRecentOps, recordOp } from "./ops-audit.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(__dirname, "..");
@@ -60,10 +61,17 @@ app.get("/api/health", async (c) => {
     product: "a2a-event-x",
     product_focus: "multi-agent-interaction",
     surface: "bs",
-    version: "0.6.0",
+    version: "0.7.0",
     ...h,
     eventLog: status,
+    opsAudit: readRecentOps(5),
   });
+});
+
+/** Recent ops audit (mutations) */
+app.get("/api/ops/audit", (c) => {
+  const limit = Number(c.req.query("limit") || 100);
+  return c.json(readRecentOps(limit));
 });
 
 /** Agent kanban: pending / claimed / acked per agent */
@@ -87,6 +95,7 @@ app.get("/api/agents/:id/deliveries", async (c) => {
 
 /** Batch DONE for multiple claim tokens */
 app.post("/api/events/batch-done", async (c) => {
+  const t0 = Date.now();
   const body = await c.req.json().catch(() => ({}));
   const tokens = Array.isArray(body.tokens)
     ? body.tokens.map(String).filter(Boolean)
@@ -95,26 +104,55 @@ app.post("/api/events/batch-done", async (c) => {
   if (tokens.length > 50) return c.json({ error: "max_50_tokens" }, 400);
   const summary =
     typeof body.summary === "string" ? body.summary : undefined;
-  return c.json(await batchDone(repoRoot, tokens, summary));
+  const out = await batchDone(repoRoot, tokens, summary);
+  recordOp({
+    op: "batch_done",
+    ok: out.ok,
+    agent: body.agent ? String(body.agent) : undefined,
+    detail: { tokens, summary, results: out.results },
+    duration_ms: Date.now() - t0,
+  });
+  return c.json(out);
 });
 
 /** Requeue dead → pending */
 app.post("/api/events/requeue-dead", async (c) => {
+  const t0 = Date.now();
   const body = await c.req.json().catch(() => ({}));
-  return c.json(
-    await requeueDead(repoRoot, {
-      agent: body.agent ? String(body.agent) : undefined,
-      deliveryId:
-        body.delivery_id != null ? Number(body.delivery_id) : undefined,
-      limit: body.limit != null ? Number(body.limit) : 20,
-    }),
-  );
+  const out = await requeueDead(repoRoot, {
+    agent: body.agent ? String(body.agent) : undefined,
+    deliveryId:
+      body.delivery_id != null ? Number(body.delivery_id) : undefined,
+    limit: body.limit != null ? Number(body.limit) : 20,
+  });
+  recordOp({
+    op: "requeue_dead",
+    ok: out.ok,
+    agent: body.agent ? String(body.agent) : undefined,
+    detail: {
+      delivery_id: body.delivery_id,
+      requeued: out.requeued,
+    },
+    error: out.error,
+    duration_ms: Date.now() - t0,
+  });
+  return c.json(out);
 });
 
-/** compensate-dispatches (default dry-run) */
+/** compensate-dispatches (default dry-run; set dry_run:false + confirm:"EXECUTE" to run) */
 app.post("/api/events/compensate", async (c) => {
+  const t0 = Date.now();
   const body = await c.req.json().catch(() => ({}));
   const dryRun = body.dry_run !== false;
+  if (!dryRun && body.confirm !== "EXECUTE") {
+    return c.json(
+      {
+        error: "confirm_required",
+        hint: 'Set dry_run:false and confirm:"EXECUTE" for real compensate',
+      },
+      400,
+    );
+  }
   const { status, body: out } = await compensateAgent(repoRoot, {
     agent: body.agent ? String(body.agent) : undefined,
     topic: body.topic ? String(body.topic) : undefined,
@@ -122,6 +160,13 @@ app.post("/api/events/compensate", async (c) => {
     limit: body.limit != null ? Number(body.limit) : 20,
     staleMinutes:
       body.stale_minutes != null ? Number(body.stale_minutes) : undefined,
+  });
+  recordOp({
+    op: "compensate",
+    ok: status === 200,
+    agent: body.agent ? String(body.agent) : undefined,
+    detail: { dry_run: dryRun, result: out },
+    duration_ms: Date.now() - t0,
   });
   return jsonStatus(c, status, out);
 });
@@ -213,6 +258,7 @@ app.get("/api/events/inbox", async (c) => {
 });
 
 app.post("/api/events/claim", async (c) => {
+  const t0 = Date.now();
   const body = await c.req.json().catch(() => ({}));
   const agent = String(body.agent || "issac");
   const limit = String(body.limit ?? 10);
@@ -224,10 +270,22 @@ app.post("/api/events/claim", async (c) => {
     mode: "v2",
     leaseS,
   });
+  const n =
+    out && typeof out === "object" && Array.isArray((out as { events?: unknown[] }).events)
+      ? (out as { events: unknown[] }).events.length
+      : 0;
+  recordOp({
+    op: "claim",
+    ok: status === 200,
+    agent,
+    detail: { limit, claimed: n },
+    duration_ms: Date.now() - t0,
+  });
   return jsonStatus(c, status, out);
 });
 
 app.post("/api/events/ack", async (c) => {
+  const t0 = Date.now();
   const body = await c.req.json().catch(() => ({}));
   const token = String(body.token || "");
   if (!token) return c.json({ error: "token_required" }, 400);
@@ -236,20 +294,34 @@ app.post("/api/events/ack", async (c) => {
     "--token",
     token,
   ]);
+  recordOp({
+    op: "ack",
+    ok: status === 200,
+    detail: { token, result: out },
+    duration_ms: Date.now() - t0,
+  });
   return jsonStatus(c, status, out);
 });
 
 app.post("/api/events/done", async (c) => {
+  const t0 = Date.now();
   const body = await c.req.json().catch(() => ({}));
   const token = String(body.token || "");
   if (!token) return c.json({ error: "token_required" }, 400);
   const args = ["done", "--token", token];
   if (body.summary) args.push("--summary", String(body.summary));
   const { status, body: out } = await runEventV2(repoRoot, args);
+  recordOp({
+    op: "done",
+    ok: status === 200,
+    detail: { token, summary: body.summary, result: out },
+    duration_ms: Date.now() - t0,
+  });
   return jsonStatus(c, status, out);
 });
 
 app.post("/api/events/renew", async (c) => {
+  const t0 = Date.now();
   const body = await c.req.json().catch(() => ({}));
   const token = String(body.token || "");
   if (!token) return c.json({ error: "token_required" }, 400);
@@ -261,21 +333,35 @@ app.post("/api/events/renew", async (c) => {
     "--extend-s",
     extend,
   ]);
+  recordOp({
+    op: "renew",
+    ok: status === 200,
+    detail: { token, extend_s: extend },
+    duration_ms: Date.now() - t0,
+  });
   return jsonStatus(c, status, out);
 });
 
 app.post("/api/events/cancel", async (c) => {
+  const t0 = Date.now();
   const body = await c.req.json().catch(() => ({}));
   const token = String(body.token || "");
   if (!token) return c.json({ error: "token_required" }, 400);
   const args = ["cancel", "--token", token];
   if (body.reason) args.push("--reason", String(body.reason));
   const { status, body: out } = await runEventV2(repoRoot, args);
+  recordOp({
+    op: "cancel",
+    ok: status === 200,
+    detail: { token, reason: body.reason, result: out },
+    duration_ms: Date.now() - t0,
+  });
   return jsonStatus(c, status, out);
 });
 
 /** v1 JSONL ops (no claim token) */
 app.post("/api/events/v1/ack", async (c) => {
+  const t0 = Date.now();
   const body = await c.req.json().catch(() => ({}));
   const agent = String(body.agent || "");
   const seq = String(body.seq ?? "");
@@ -292,10 +378,18 @@ app.post("/api/events/v1/ack", async (c) => {
     "--file",
     file,
   ]);
+  recordOp({
+    op: "v1_ack",
+    ok: status === 200,
+    agent,
+    detail: { seq, file, result: out },
+    duration_ms: Date.now() - t0,
+  });
   return jsonStatus(c, status, out);
 });
 
 app.post("/api/events/v1/done", async (c) => {
+  const t0 = Date.now();
   const body = await c.req.json().catch(() => ({}));
   const agent = String(body.agent || "");
   const seq = String(body.seq ?? "");
@@ -306,6 +400,13 @@ app.post("/api/events/v1/done", async (c) => {
   const args = ["done", "--agent", agent, "--seq", seq, "--file", file];
   if (body.summary) args.push("--summary", String(body.summary));
   const { status, body: out } = await runEventV1(repoRoot, args);
+  recordOp({
+    op: "v1_done",
+    ok: status === 200,
+    agent,
+    detail: { seq, file, summary: body.summary, result: out },
+    duration_ms: Date.now() - t0,
+  });
   return jsonStatus(c, status, out);
 });
 
@@ -316,8 +417,8 @@ app.get("/api/meta", (c) =>
     tagline: "多 Agent 交互管理指挥台",
     primarySurface: "browser",
     defaultView: "agents",
-    secondaryModules: ["inbox", "sessions", "write-path"],
-    version: "0.6.0",
+    secondaryModules: ["inbox", "sessions", "write-path", "ops-audit"],
+    version: "0.7.0",
     mcp: "deferred",
     providers: hub.providers(),
     docs: {

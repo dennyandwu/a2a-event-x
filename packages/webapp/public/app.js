@@ -14,6 +14,8 @@ let selectedAgentId = null;
 let agentDeliveries = [];
 let selectedDeliveryIdx = null;
 let agentStatusFilter = "active";
+/** @type {ReturnType<typeof setInterval> | null} */
+let autoRefreshTimer = null;
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
@@ -38,6 +40,7 @@ function setView(name) {
   $("#view-events").classList.toggle("hidden", name !== "events");
   $("#view-sessions").classList.toggle("hidden", name !== "sessions");
   $("#view-paths").classList.toggle("hidden", name !== "paths");
+  $("#view-audit").classList.toggle("hidden", name !== "audit");
   $("#view-health").classList.toggle("hidden", name !== "health");
   $("#agent-filters").classList.toggle("hidden", name !== "agents");
   $("#workflow-filters").classList.toggle("hidden", name !== "workflows");
@@ -48,8 +51,24 @@ function setView(name) {
   if (name === "workflows") loadWorkflows();
   if (name === "health") loadHealth();
   if (name === "paths") loadPaths();
+  if (name === "audit") loadAudit();
   if (name === "events") ensureAgentsLoaded();
   if (name === "sessions" && !sessions.length) loadSessions().catch(() => {});
+}
+
+function setupAutoRefresh() {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+  }
+  if (!$("#auto-refresh").checked) return;
+  const sec = Number($("#auto-refresh-sec").value || 30);
+  autoRefreshTimer = setInterval(() => {
+    // only auto-refresh when on agents view
+    if ($("#view-agents") && !$("#view-agents").classList.contains("hidden")) {
+      loadBoard();
+    }
+  }, Math.max(sec, 5) * 1000);
 }
 
 function boardToast(msg, kind) {
@@ -210,6 +229,7 @@ async function selectAgent(agentId) {
   $("#agent-batch-done").classList.remove("hidden");
   $("#agent-requeue-dead").classList.remove("hidden");
   $("#agent-compensate").classList.remove("hidden");
+  $("#agent-compensate-run").classList.remove("hidden");
   $("#agent-open-inbox").classList.remove("hidden");
   await loadAgentDetail(agentId, true);
 }
@@ -359,6 +379,50 @@ async function compensateDryRun() {
     agentToast("compensate dry-run 结果见下方", "ok");
   } catch (e) {
     agentToast(String(e.message || e), "err");
+  }
+}
+
+async function compensateExecute() {
+  if (!selectedAgentId) return;
+  const a = prompt(
+    `将对该 agent 执行 REAL compensate（会写事件/重试 wake）。\nAgent: ${selectedAgentId}\n\n请输入 EXECUTE 确认：`,
+  );
+  if (a !== "EXECUTE") {
+    agentToast("已取消（未输入 EXECUTE）", "err");
+    return;
+  }
+  if (!confirm(`再次确认：对 ${selectedAgentId} 执行 compensate-dispatches？`)) {
+    agentToast("已取消", "");
+    return;
+  }
+  agentToast("compensate EXECUTE…");
+  try {
+    const data = await api("/api/events/compensate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent: selectedAgentId,
+        dry_run: false,
+        confirm: "EXECUTE",
+        limit: 20,
+      }),
+    });
+    $("#agent-delivery-detail").classList.remove("empty");
+    $("#agent-delivery-detail").innerHTML = `<pre class="codeblock" style="margin:0;max-height:none">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+    agentToast("compensate 已执行，结果见下方", "ok");
+    await loadBoard();
+  } catch (e) {
+    agentToast(String(e.message || e), "err");
+  }
+}
+
+async function loadAudit() {
+  try {
+    const data = await api("/api/ops/audit?limit=80");
+    $("#audit-path").textContent = `${data.path || ""} · total ${data.count ?? 0} lines`;
+    $("#audit-out").textContent = JSON.stringify(data.entries || [], null, 2);
+  } catch (e) {
+    $("#audit-out").textContent = String(e.message || e);
   }
 }
 
@@ -810,9 +874,13 @@ $("#agent-claim").addEventListener("click", () => {
 $("#agent-batch-done").addEventListener("click", () => batchDoneSelected());
 $("#agent-requeue-dead").addEventListener("click", () => requeueDeadForAgent());
 $("#agent-compensate").addEventListener("click", () => compensateDryRun());
+$("#agent-compensate-run").addEventListener("click", () => compensateExecute());
 $("#agent-open-inbox").addEventListener("click", () => {
   if (selectedAgentId) openAgentInbox(selectedAgentId);
 });
+$("#auto-refresh").addEventListener("change", setupAutoRefresh);
+$("#auto-refresh-sec").addEventListener("change", setupAutoRefresh);
+$("#refresh-audit").addEventListener("click", loadAudit);
 $$(".stab").forEach((b) =>
   b.addEventListener("click", async () => {
     agentStatusFilter = b.dataset.st;

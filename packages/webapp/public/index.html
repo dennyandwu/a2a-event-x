@@ -22,11 +22,12 @@
           <button class="nav" data-view="events">Inbox</button>
           <button class="nav" data-view="sessions">Sessions</button>
           <button class="nav" data-view="paths">Write Path</button>
+          <button class="nav" data-view="audit">Ops Audit</button>
           <button class="nav" data-view="health">Health</button>
         </nav>
         <div class="sidebar-foot">
           <span class="pill">B/S</span>
-          <span class="muted">v0.6 · 交互优先</span>
+          <span class="muted">v0.7 · 交互优先</span>
         </div>
       </aside>
 
@@ -40,6 +41,14 @@
             <label class="chk">
               <input type="checkbox" id="hide-reserved" /> 隐藏 reserved
             </label>
+            <label class="chk">
+              <input type="checkbox" id="auto-refresh" /> 自动刷新
+            </label>
+            <select id="auto-refresh-sec" title="interval">
+              <option value="10">10s</option>
+              <option value="30" selected>30s</option>
+              <option value="60">60s</option>
+            </select>
             <span id="board-totals" class="muted"></span>
           </div>
           <div class="filters hidden" id="event-filters">
@@ -94,7 +103,8 @@
                   <button id="agent-claim" class="btn hidden" title="Claim pending for this agent">Claim</button>
                   <button id="agent-batch-done" class="btn hidden" title="Batch DONE selected claimed">Batch DONE</button>
                   <button id="agent-requeue-dead" class="btn danger ghost hidden">Requeue dead</button>
-                  <button id="agent-compensate" class="btn ghost hidden" title="compensate-dispatches dry-run">Compensate?</button>
+                  <button id="agent-compensate" class="btn ghost hidden" title="compensate dry-run">Compensate dry-run</button>
+                  <button id="agent-compensate-run" class="btn danger hidden" title="REAL compensate — needs confirm">Compensate RUN</button>
                   <button id="agent-open-inbox" class="btn ghost hidden">全屏 Inbox</button>
                 </div>
               </div>
@@ -206,6 +216,15 @@
           </div>
           <div id="paths-cards" class="cards"></div>
           <pre id="paths-out" class="codeblock">加载中…</pre>
+        </section>
+
+        <section id="view-audit" class="view hidden">
+          <div class="pane-head">
+            <h2>Ops Audit</h2>
+            <button id="refresh-audit" class="btn ghost">刷新</button>
+          </div>
+          <div id="audit-path" class="muted" style="padding:0 16px 8px"></div>
+          <pre id="audit-out" class="codeblock">加载中…</pre>
         </section>
 
         <section id="view-health" class="view hidden">
