@@ -633,33 +633,287 @@ async function loadWorkflows() {
   }
 }
 
-async function openWorkflow(cid) {
-  $("#workflow-title").textContent = cid;
+/** @type {string|null} */
+let activeWorkflowId = null;
+/** @type {Array<any>} */
+let activeWorkflowRows = [];
+
+function parseCausation(cid) {
+  if (!cid) return null;
+  const s = String(cid);
+  let m = s.match(/seq:([^:]+):(\d+)/i);
+  if (m) return { source_file: m[1], seq: Number(m[2]) };
+  m = s.match(/seq:(\d+)/i);
+  if (m) return { seq: Number(m[1]) };
+  m = s.match(/(?:^|[^\d])(\d{1,9})$/);
+  if (m) return { seq: Number(m[1]) };
+  return null;
+}
+
+/** Group flat delivery rows → event nodes for flow graph. */
+function buildFlowNodes(rows) {
+  /** @type {Map<string, any>} */
+  const map = new Map();
+  for (const r of rows) {
+    const key = `${r.source_file || "?"}::${r.seq ?? r.event_id ?? "?"}`;
+    if (!map.has(key)) {
+      const summary =
+        (r.payload && (r.payload.summary || r.payload.subject)) || r.topic || r.type || "";
+      map.set(key, {
+        key,
+        event_id: r.event_id,
+        source_file: r.source_file,
+        seq: r.seq,
+        ts: r.ts,
+        from: r.from,
+        type: r.type,
+        topic: r.topic,
+        causation_id: r.causation_id,
+        summary,
+        deliveries: [],
+      });
+    }
+    const node = map.get(key);
+    if (r.to_agent || r.delivery_id) {
+      node.deliveries.push({
+        delivery_id: r.delivery_id,
+        to_agent: r.to_agent || "?",
+        status: r.delivery_status || r.status || "unknown",
+        attempt_count: r.attempt_count,
+        lease_expires_at: r.lease_expires_at,
+        has_token: r.has_token,
+      });
+    }
+    // keep earliest ts / first causation
+    if (r.ts && (!node.ts || r.ts < node.ts)) node.ts = r.ts;
+    if (r.causation_id && !node.causation_id) node.causation_id = r.causation_id;
+  }
+  const nodes = [...map.values()].sort((a, b) => {
+    if (a.ts && b.ts && a.ts !== b.ts) return a.ts < b.ts ? -1 : 1;
+    return (a.seq || 0) - (b.seq || 0);
+  });
+
+  // resolve parent keys via causation
+  const bySeqFile = new Map();
+  const bySeq = new Map();
+  for (const n of nodes) {
+    bySeqFile.set(`${n.source_file}::${n.seq}`, n.key);
+    if (!bySeq.has(n.seq)) bySeq.set(n.seq, n.key);
+  }
+  for (const n of nodes) {
+    n.parentKey = null;
+    const c = parseCausation(n.causation_id);
+    if (!c) continue;
+    if (c.source_file != null && c.seq != null) {
+      n.parentKey = bySeqFile.get(`${c.source_file}::${c.seq}`) || bySeq.get(c.seq) || null;
+    } else if (c.seq != null) {
+      n.parentKey = bySeq.get(c.seq) || null;
+    }
+    if (n.parentKey === n.key) n.parentKey = null;
+  }
+
+  // layout levels (BFS from roots; fallback order)
+  const children = new Map(nodes.map((n) => [n.key, []]));
+  for (const n of nodes) {
+    if (n.parentKey && children.has(n.parentKey)) children.get(n.parentKey).push(n.key);
+  }
+  const levelOf = new Map();
+  const roots = nodes.filter((n) => !n.parentKey || !map.has(n.parentKey));
+  const queue = roots.map((n) => n.key);
+  roots.forEach((n) => levelOf.set(n.key, 0));
+  while (queue.length) {
+    const k = queue.shift();
+    const lv = levelOf.get(k) || 0;
+    for (const ch of children.get(k) || []) {
+      const next = lv + 1;
+      if (!levelOf.has(ch) || levelOf.get(ch) < next) {
+        levelOf.set(ch, next);
+        queue.push(ch);
+      }
+    }
+  }
+  // orphans without parent link still ordered by index
+  nodes.forEach((n, i) => {
+    if (!levelOf.has(n.key)) levelOf.set(n.key, i);
+  });
+
+  const byLevel = new Map();
+  for (const n of nodes) {
+    const lv = levelOf.get(n.key) || 0;
+    n.level = lv;
+    if (!byLevel.has(lv)) byLevel.set(lv, []);
+    byLevel.get(lv).push(n);
+  }
+  const colW = 240;
+  const rowH = 170;
+  const padX = 28;
+  const padY = 24;
+  for (const [lv, list] of byLevel) {
+    list.forEach((n, i) => {
+      n.x = padX + lv * colW;
+      n.y = padY + i * rowH;
+      n.w = 200;
+      n.h = 88 + Math.max(n.deliveries.length, 1) * 28;
+    });
+  }
+  const maxX = Math.max(...nodes.map((n) => n.x + n.w), 400) + padX;
+  const maxY = Math.max(...nodes.map((n) => n.y + n.h), 200) + padY;
+  return { nodes, width: maxX, height: maxY };
+}
+
+function flowStatusRollup(nodes) {
+  const counts = { pending: 0, claimed: 0, acked: 0, done: 0, dead: 0, other: 0 };
+  for (const n of nodes) {
+    for (const d of n.deliveries) {
+      const st = d.status || "other";
+      if (st in counts) counts[st] += 1;
+      else counts.other += 1;
+    }
+  }
+  return counts;
+}
+
+function renderWorkflowFlow(rows) {
+  const canvas = $("#workflow-flow");
+  const legend = $("#workflow-legend");
+  if (!rows.length) {
+    canvas.classList.add("empty");
+    canvas.innerHTML = "空流程";
+    legend?.classList.add("hidden");
+    return;
+  }
+  const { nodes, width, height } = buildFlowNodes(rows);
+  const counts = flowStatusRollup(nodes);
+  canvas.classList.remove("empty");
+  legend?.classList.remove("hidden");
+
+  const nodeByKey = new Map(nodes.map((n) => [n.key, n]));
+  const edges = nodes
+    .filter((n) => n.parentKey && nodeByKey.has(n.parentKey))
+    .map((n) => {
+      const p = nodeByKey.get(n.parentKey);
+      const x1 = p.x + p.w;
+      const y1 = p.y + Math.min(p.h, 48);
+      const x2 = n.x;
+      const y2 = n.y + Math.min(n.h, 48);
+      const mid = (x1 + x2) / 2;
+      const live =
+        n.deliveries.some((d) => d.status === "claimed" || d.status === "pending") ||
+        p.deliveries.some((d) => d.status === "claimed" || d.status === "pending");
+      return { d: `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`, live };
+    });
+
+  const statsHtml = `<div class="flow-stats">
+    <span><b>${nodes.length}</b> steps</span>
+    <span>pending <b>${counts.pending}</b></span>
+    <span>claimed <b>${counts.claimed}</b></span>
+    <span>acked <b>${counts.acked}</b></span>
+    <span>done <b>${counts.done}</b></span>
+    <span>dead <b>${counts.dead}</b></span>
+  </div>`;
+
+  const svgPaths = edges
+    .map((e) => `<path class="${e.live ? "is-active" : ""}" d="${e.d}" />`)
+    .join("");
+
+  const nodesHtml = nodes
+    .map((n) => {
+      const hasDead = n.deliveries.some((d) => d.status === "dead");
+      const hasLive = n.deliveries.some(
+        (d) => d.status === "claimed" || d.status === "pending" || d.status === "acked",
+      );
+      const dels =
+        n.deliveries
+          .map((d) => {
+            const pulse =
+              d.status === "claimed" || d.status === "acked"
+                ? `<span class="flow-pulse" title="in flight"></span>`
+                : "";
+            return `<div class="flow-del ${escapeHtml(d.status)}">
+              <span class="fd-agent">${pulse}${escapeHtml(d.to_agent)}</span>
+              <span class="fd-st">${escapeHtml(d.status)}</span>
+            </div>`;
+          })
+          .join("") || `<div class="flow-del"><span class="muted">no delivery</span></div>`;
+      return `<div class="flow-node ${hasDead ? "has-dead" : ""} ${hasLive ? "has-live" : ""}"
+        style="left:${n.x}px;top:${n.y}px;width:${n.w}px"
+        data-key="${escapeHtml(n.key)}" title="seq ${n.seq}">
+        <div class="fn-type">${escapeHtml(n.type || "event")}</div>
+        <div class="fn-sum">${escapeHtml(String(n.summary || ""))}</div>
+        <div class="fn-meta">seq ${escapeHtml(String(n.seq ?? "—"))} · from ${escapeHtml(n.from || "?")}${
+          n.causation_id ? ` · ← ${escapeHtml(String(n.causation_id))}` : ""
+        }</div>
+        <div class="fn-dels">${dels}</div>
+      </div>`;
+    })
+    .join("");
+
+  canvas.innerHTML = `${statsHtml}
+    <div class="flow-inner" style="width:${width}px;height:${height}px">
+      <svg class="flow-svg" width="${width}" height="${height}">
+        <defs>
+          <marker id="flow-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="rgba(139,155,176,0.8)" />
+          </marker>
+        </defs>
+        ${svgPaths}
+      </svg>
+      ${nodesHtml}
+    </div>`;
+}
+
+function renderWorkflowTimeline(rows) {
   const box = $("#workflow-timeline");
   box.classList.remove("empty");
+  box.innerHTML = "";
+  if (!rows.length) {
+    box.innerHTML = `<div class="muted">空</div>`;
+    return;
+  }
+  for (const e of rows) {
+    const div = document.createElement("div");
+    const st = e.delivery_status || "event";
+    div.className = `tl-item ${escapeHtml(String(st))}`;
+    const summary =
+      (e.payload && (e.payload.summary || e.payload.subject)) || e.topic || e.type || "";
+    div.innerHTML = `
+      <div class="tl-head">${escapeHtml(e.type || "?")} · ${escapeHtml(String(summary))}</div>
+      <div class="tl-meta">${escapeHtml(e.ts || "")} · from ${escapeHtml(e.from || "?")} → ${escapeHtml(e.to_agent || "—")} · ${escapeHtml(String(st))} · seq ${escapeHtml(String(e.seq ?? ""))}${
+        e.causation_id ? ` · cause ${escapeHtml(String(e.causation_id))}` : ""
+      }</div>
+    `;
+    box.appendChild(div);
+  }
+}
+
+async function openWorkflow(cid) {
+  activeWorkflowId = cid;
+  $("#workflow-title").textContent = cid;
+  const box = $("#workflow-timeline");
+  const flow = $("#workflow-flow");
+  const btn = $("#refresh-workflow-detail");
+  if (btn) btn.classList.remove("hidden");
+  box.classList.remove("empty");
+  flow.classList.remove("empty");
   box.innerHTML = `<div class="muted">加载时间线…</div>`;
+  flow.innerHTML = `<div class="muted" style="padding:24px">加载流程图…</div>`;
   try {
     const data = await api(`/api/interactions/${encodeURIComponent(cid)}`);
     const events = data.events || [];
-    $("#workflow-meta").textContent = `${events.length} rows`;
+    activeWorkflowRows = events;
+    $("#workflow-meta").textContent = `${events.length} delivery rows · ${fmtTime(new Date())}`;
     if (!events.length) {
+      flow.classList.add("empty");
+      flow.textContent = "空";
       box.innerHTML = `<div class="muted">空</div>`;
+      $("#workflow-legend")?.classList.add("hidden");
       return;
     }
-    box.innerHTML = "";
-    for (const e of events) {
-      const div = document.createElement("div");
-      const st = e.delivery_status || "event";
-      div.className = `tl-item ${escapeHtml(String(st))}`;
-      const summary =
-        (e.payload && (e.payload.summary || e.payload.subject)) || e.topic || e.type || "";
-      div.innerHTML = `
-        <div class="tl-head">${escapeHtml(e.type || "?")} · ${escapeHtml(String(summary))}</div>
-        <div class="tl-meta">${escapeHtml(e.ts || "")} · from ${escapeHtml(e.from || "?")} → ${escapeHtml(e.to_agent || "—")} · ${escapeHtml(String(st))} · seq ${escapeHtml(String(e.seq ?? ""))}</div>
-      `;
-      box.appendChild(div);
-    }
+    renderWorkflowFlow(events);
+    renderWorkflowTimeline(events);
   } catch (err) {
+    flow.classList.add("empty");
+    flow.textContent = String(err.message || err);
     box.innerHTML = `<div class="muted">${escapeHtml(String(err.message || err))}</div>`;
   }
 }
@@ -1151,6 +1405,9 @@ $("#aop-done").addEventListener("click", () => agentDeliveryOp("done"));
 $("#aop-renew").addEventListener("click", () => agentDeliveryOp("renew"));
 $("#aop-cancel").addEventListener("click", () => agentDeliveryOp("cancel"));
 $("#refresh-workflows").addEventListener("click", loadWorkflows);
+$("#refresh-workflow-detail")?.addEventListener("click", () => {
+  if (activeWorkflowId) openWorkflow(activeWorkflowId);
+});
 
 $("#refresh").addEventListener("click", loadSessions);
 $("#provider").addEventListener("change", loadSessions);

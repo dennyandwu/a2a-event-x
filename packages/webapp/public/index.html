@@ -150,9 +150,9 @@
           </div>
         </section>
 
-        <!-- Workflows / correlation -->
+        <!-- Workflows / correlation + flow viz -->
         <section id="view-workflows" class="view hidden">
-          <div class="split">
+          <div class="split workflow-split">
             <div class="list-pane">
               <div class="pane-head">
                 <h2>Workflows</h2>
@@ -160,10 +160,26 @@
               </div>
               <div id="workflow-list" class="list"></div>
             </div>
-            <div class="detail-pane">
+            <div class="detail-pane workflow-detail">
               <div class="pane-head">
                 <h2 id="workflow-title">选择一个 workflow</h2>
-                <code id="workflow-meta" class="muted"></code>
+                <div class="detail-actions">
+                  <button id="refresh-workflow-detail" class="btn ghost hidden" type="button">刷新流程</button>
+                  <code id="workflow-meta" class="muted"></code>
+                </div>
+              </div>
+              <div id="workflow-legend" class="flow-legend hidden">
+                <span class="fl pending">pending</span>
+                <span class="fl claimed">claimed</span>
+                <span class="fl acked">acked</span>
+                <span class="fl done">done</span>
+                <span class="fl dead">dead</span>
+                <span class="muted">节点 = event · 角标 = delivery · 箭头 = causation</span>
+              </div>
+              <div id="workflow-flow" class="flow-canvas messages empty">选左侧 workflow 看动态流程图</div>
+              <div class="pane-head compact">
+                <h3>时间线</h3>
+                <span class="muted">同一 correlation 的步骤明细</span>
               </div>
               <div id="workflow-timeline" class="timeline messages empty">correlation 时间线</div>
             </div>
