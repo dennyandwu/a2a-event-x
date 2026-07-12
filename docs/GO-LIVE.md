@@ -15,7 +15,7 @@
 
 **非 v1.0 / 明确不做**：MCP（已移出本项目）、标准 A2A 远程 mesh 主路径、非本机多租户鉴权产品化、hcom 投影。
 
-**Agent 接入**：共用 Skill `skills/a2a-consumer` + `a2a-v2.py` / `a2a-log.py` CLI，不经 MCP。
+**Agent 接入（现状）**：生产侧 OpenClaw / Claude Code 等 **已直接遵循 Event Log 协议**（CLI / Hook / watcher）。本仓库 **不经 MCP**；可选 Skill 草稿见 `skills/`，**待指挥台完全落地后再推广**，不作为当前交付门禁。
 
 ## 快速启动
 
@@ -98,5 +98,5 @@ curl -s 'http://127.0.0.1:8787/api/interactions?limit=5' | python3 -c "import sy
 ## 版本
 
 - **v1.0.0**：主线可演示 + 真数据同步/指向 + 操作闭环 + 传递过程可视化  
-- **v1.1**：去掉 MCP；Agent 侧以 Skill + CLI 为准  
-- 后续：只读模式开关、权威机部署包、Skill 分发到各 agent 工作区
+- **v1.1**：去掉 MCP；Agent 侧继续走既有 Event Log 协议（非 Skill 强制）  
+- 后续：指挥台打磨 / 只读模式 / 权威机部署；**Skill 推广延后**

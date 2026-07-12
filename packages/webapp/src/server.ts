@@ -495,7 +495,7 @@ app.get("/api/meta", (c) =>
     defaultView: "agents",
     secondaryModules: ["inbox", "sessions", "write-path", "ops-audit"],
     version: VERSION,
-    agentAccess: "cli+skill",
+    agentAccess: "event-log-protocol",
     landable: true,
     auth: API_TOKEN ? "token" : "open-localhost",
     data: {

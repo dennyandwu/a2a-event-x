@@ -8,8 +8,8 @@
 |--------|------|------|
 | **主线** | Event Log + **Agent 看板** | pending / claimed / acked / 操作闭环 |
 | 主线 | Workflows · Inbox | agent 传递过程 + correlation；claim / ack / done |
-| **Agent** | **Skill** [`skills/a2a-consumer`](skills/a2a-consumer/SKILL.md) | 教 agent 用 CLI 消费 Event Log（非 MCP） |
 | 上下文 | Sessions | coding CLI 历史 |
+| 后置 | Skill（可选） | 现有 OpenClaw/Claude agents **已遵循 Event Log 协议**；Skill 待指挥台完全落地后再考虑 |
 | 运维 | **系统**（数据源 / Write Path / Ops Audit / Health） | 真数据同步 · 拓扑 · 审计 |
 
 ## Quick start

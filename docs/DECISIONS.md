@@ -10,13 +10,15 @@ Ultimate goal: **manage agent↔agent work** (visibility, claim/lease, ops), not
 |----------|---------|------|
 | **P0** | **Agents board + Inbox** (`packages/webapp`) | Primary **human** interface |
 | **P0** | Event Log toolkit (`packages/event-log`) | Cross-agent bus (canonical JSONL + v2 lease) |
-| **P1** | **Agent Skill** (`skills/a2a-consumer`) | Teach agents how to pull / claim / done via CLI |
 | P2 | Sessions module | Context only (coding CLI history) |
-| P3 | CLI `a2ax` | Secondary / scripting (session + log proxy) |
+| P3 | CLI `a2ax` | Secondary / scripting |
+| **Later** | Agent Skill (`skills/a2a-consumer`) | Only after human console is fully landed |
 
 **Locked 2026-07-12:** product = multi-agent interaction console; R1 = agent pending/claimed board; name stays **A2A Event X**.
 
-**Locked 2026-07-12 (update):** **No MCP** in this project. Agent access = **CLI + Skill**; human access = **B/S**. OpenClaw plugins (if any) stay host-side automation only.
+**Locked 2026-07-12 (update):** **No MCP** in this project. Human access = **B/S**. Agents already speak Event Log via existing OpenClaw / Claude Code runtimes + CLI protocol — **do not push Skill packaging until Event X itself is fully landed**.
+
+**Locked 2026-07-12 (skill deferral):** OpenClaw + Claude Code agents **already follow** the A2A Event Log interaction protocol in production. A shared Skill is optional documentation/onboarding for *later*, not a current delivery gate.
 
 OpenClaw is **not** required to run Event X.
 
