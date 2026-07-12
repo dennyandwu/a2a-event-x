@@ -995,6 +995,133 @@ function renderWorkflowFlow(rows) {
     </div>`;
 }
 
+/**
+ * Agent-to-agent handoff history (what the user wants for triage).
+ * One row per delivery: from → to · type · status · summary · time
+ * Includes done / cancelled / dead so full history is visible.
+ */
+function buildHandoffSteps(rows) {
+  const steps = rows
+    .filter((r) => r.to_agent || r.delivery_id || r.from)
+    .map((r, i) => {
+      const summary =
+        (r.payload && (r.payload.summary || r.payload.subject)) || r.topic || r.type || "";
+      return {
+        i: i + 1,
+        ts: r.ts || "",
+        from: r.from || "?",
+        to: r.to_agent || "—",
+        type: r.type || "event",
+        topic: r.topic || "",
+        status: r.delivery_status || r.status || "event",
+        summary: String(summary),
+        seq: r.seq,
+        causation_id: r.causation_id,
+        attempt_count: r.attempt_count || 0,
+        lease_expires_at: r.lease_expires_at,
+        delivery_id: r.delivery_id,
+      };
+    })
+    .sort((a, b) => {
+      if (a.ts && b.ts && a.ts !== b.ts) return a.ts < b.ts ? -1 : 1;
+      return (a.seq || 0) - (b.seq || 0) || (a.delivery_id || 0) - (b.delivery_id || 0);
+    });
+  steps.forEach((s, idx) => {
+    s.i = idx + 1;
+  });
+  return steps;
+}
+
+/** Compact path of agents in order of first appearance along the handoff chain. */
+function agentPathSummary(steps) {
+  const path = [];
+  const seen = new Set();
+  for (const s of steps) {
+    for (const a of [s.from, s.to]) {
+      if (!a || a === "?" || a === "—") continue;
+      if (!seen.has(a)) {
+        seen.add(a);
+        path.push(a);
+      }
+    }
+  }
+  return path;
+}
+
+function renderWorkflowHandoffs(rows) {
+  const box = $("#workflow-handoffs");
+  if (!box) return;
+  box.classList.remove("empty");
+  const steps = buildHandoffSteps(rows);
+  if (!steps.length) {
+    box.innerHTML = `<div class="muted" style="padding:12px">无 agent 传递记录</div>`;
+    return;
+  }
+  const path = agentPathSummary(steps);
+  const nHist = steps.filter((s) => s.status === "done" || s.status === "cancelled").length;
+  const nLive = steps.filter((s) =>
+    ["pending", "claimed", "acked"].includes(s.status),
+  ).length;
+  const nDead = steps.filter((s) => s.status === "dead").length;
+
+  const pathHtml = path.length
+    ? `<div class="handoff-path">
+        <span class="muted">参与 agent</span>
+        ${path
+          .map(
+            (a, i) =>
+              `${i ? `<span class="hp-arrow">→</span>` : ""}<span class="hp-agent">${escapeHtml(a)}</span>`,
+          )
+          .join("")}
+        <span class="muted hp-counts">· ${steps.length} 次传递 · 进行中 ${nLive} · 终态 ${nHist} · dead ${nDead}</span>
+      </div>`
+    : "";
+
+  // Group concurrent fan-out (same seq) under one "wave"
+  let lastSeq = null;
+  const parts = [];
+  for (const s of steps) {
+    if (s.seq !== lastSeq) {
+      lastSeq = s.seq;
+      parts.push(
+        `<div class="handoff-wave">seq ${escapeHtml(String(s.seq ?? "—"))} · ${escapeHtml(s.type || "")}${
+          s.causation_id
+            ? ` <span class="muted">← ${escapeHtml(String(s.causation_id))}</span>`
+            : ""
+        }</div>`,
+      );
+    }
+    const terminal = s.status === "done" || s.status === "cancelled";
+    const live = ["pending", "claimed", "acked"].includes(s.status);
+    parts.push(`
+      <div class="handoff-step st-${escapeHtml(s.status)} ${terminal ? "is-terminal" : ""} ${live ? "is-live" : ""}">
+        <div class="hs-idx">#${s.i}</div>
+        <div class="hs-main">
+          <div class="hs-agents">
+            <span class="hs-from" title="from">${escapeHtml(s.from)}</span>
+            <span class="hs-pipe">
+              <span class="hs-line"></span>
+              <span class="hs-type">${escapeHtml(s.type)}</span>
+              <span class="hs-line"></span>
+              <span class="hs-chev">▶</span>
+            </span>
+            <span class="hs-to" title="to">${escapeHtml(s.to)}</span>
+            <span class="hs-status st-${escapeHtml(s.status)}">${escapeHtml(s.status)}</span>
+          </div>
+          <div class="hs-sum">${escapeHtml(s.summary)}</div>
+          <div class="hs-meta">
+            ${escapeHtml(s.ts || "—")}${s.topic ? ` · ${escapeHtml(s.topic)}` : ""}
+            ${s.attempt_count ? ` · attempt ${s.attempt_count}` : ""}
+            ${s.lease_expires_at ? ` · lease ${escapeHtml(s.lease_expires_at)}` : ""}
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  box.innerHTML = pathHtml + `<div class="handoff-list">${parts.join("")}</div>`;
+}
+
 function renderWorkflowTimeline(rows) {
   const box = $("#workflow-timeline");
   box.classList.remove("empty");
@@ -1010,8 +1137,8 @@ function renderWorkflowTimeline(rows) {
     const summary =
       (e.payload && (e.payload.summary || e.payload.subject)) || e.topic || e.type || "";
     div.innerHTML = `
-      <div class="tl-head">${escapeHtml(e.type || "?")} · ${escapeHtml(String(summary))}</div>
-      <div class="tl-meta">${escapeHtml(e.ts || "")} · from ${escapeHtml(e.from || "?")} → ${escapeHtml(e.to_agent || "—")} · ${escapeHtml(String(st))} · seq ${escapeHtml(String(e.seq ?? ""))}${
+      <div class="tl-head">${escapeHtml(e.from || "?")} → ${escapeHtml(e.to_agent || "—")} · ${escapeHtml(e.type || "?")} · ${escapeHtml(String(summary))}</div>
+      <div class="tl-meta">${escapeHtml(e.ts || "")} · ${escapeHtml(String(st))} · seq ${escapeHtml(String(e.seq ?? ""))}${
         e.causation_id ? ` · cause ${escapeHtml(String(e.causation_id))}` : ""
       }</div>
     `;
@@ -1030,6 +1157,11 @@ async function openWorkflow(cid) {
   flow.classList.remove("empty");
   box.innerHTML = `<div class="muted">加载时间线…</div>`;
   flow.innerHTML = `<div class="muted" style="padding:24px">加载流程图…</div>`;
+  const hoLoad = $("#workflow-handoffs");
+  if (hoLoad) {
+    hoLoad.classList.remove("empty");
+    hoLoad.innerHTML = `<div class="muted" style="padding:12px">加载 agent 传递过程…</div>`;
+  }
   try {
     const data = await api(`/api/interactions/${encodeURIComponent(cid)}`);
     const events = data.events || [];
@@ -1039,9 +1171,15 @@ async function openWorkflow(cid) {
       flow.classList.add("empty");
       flow.textContent = "空";
       box.innerHTML = `<div class="muted">空</div>`;
+      const ho = $("#workflow-handoffs");
+      if (ho) {
+        ho.classList.add("empty");
+        ho.textContent = "无传递记录";
+      }
       $("#workflow-legend")?.classList.add("hidden");
       return;
     }
+    renderWorkflowHandoffs(events);
     renderWorkflowFlow(events);
     renderWorkflowTimeline(events);
     // keep list selection highlight
@@ -1050,6 +1188,11 @@ async function openWorkflow(cid) {
     flow.classList.add("empty");
     flow.textContent = String(err.message || err);
     box.innerHTML = `<div class="muted">${escapeHtml(String(err.message || err))}</div>`;
+    const ho = $("#workflow-handoffs");
+    if (ho) {
+      ho.classList.remove("empty");
+      ho.innerHTML = `<div class="muted">${escapeHtml(String(err.message || err))}</div>`;
+    }
   }
 }
 

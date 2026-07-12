@@ -176,18 +176,23 @@
                   <code id="workflow-meta" class="muted"></code>
                 </div>
               </div>
+              <div class="pane-head compact">
+                <h3>Agent 传递过程</h3>
+                <span class="muted">谁 → 谁 · 含历史 done / dead（按时间）</span>
+              </div>
+              <div id="workflow-handoffs" class="handoff-panel messages empty">选左侧 workflow 查看 agent 之间的传递历史</div>
               <div id="workflow-legend" class="flow-legend hidden">
                 <span class="fl pending">pending</span>
                 <span class="fl claimed">claimed</span>
                 <span class="fl acked">acked</span>
                 <span class="fl done">done</span>
                 <span class="fl dead">dead</span>
-                <span class="muted">节点 = event · 角标 = delivery · 箭头 = causation</span>
+                <span class="muted">下图：event 节点 · delivery 角标 · causation 箭头</span>
               </div>
-              <div id="workflow-flow" class="flow-canvas messages empty">选左侧 workflow 看动态流程图</div>
+              <div id="workflow-flow" class="flow-canvas messages empty">流程图</div>
               <div class="pane-head compact">
-                <h3>时间线</h3>
-                <span class="muted">同一 correlation 的步骤明细</span>
+                <h3>原始时间线</h3>
+                <span class="muted">delivery 明细</span>
               </div>
               <div id="workflow-timeline" class="timeline messages empty">correlation 时间线</div>
             </div>

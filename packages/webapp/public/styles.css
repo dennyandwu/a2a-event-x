@@ -463,6 +463,153 @@ nav { display: flex; flex-direction: column; gap: 4px; }
 .wf-item.phase-problem { box-shadow: inset 3px 0 0 var(--danger); }
 .wf-item .wf-agents { opacity: 0.85; font-size: 10px; }
 .flow-stats .wf-phase-tag { margin-right: 4px; }
+
+/* Agent handoff history (from → to process) */
+.handoff-panel {
+  margin: 4px 12px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  max-height: 42vh;
+  overflow: auto;
+}
+.handoff-panel.empty {
+  display: grid;
+  place-items: center;
+  min-height: 72px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.handoff-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px 10px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.hp-agent {
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(91, 157, 255, 0.12);
+  border: 1px solid rgba(91, 157, 255, 0.35);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.hp-arrow { color: var(--muted); font-size: 12px; }
+.hp-counts { margin-left: 4px; font-size: 11px; }
+.handoff-wave {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 10px 4px 4px;
+}
+.handoff-step {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 8px;
+  padding: 10px 10px;
+  margin: 4px 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  border-left: 3px solid var(--border);
+}
+.handoff-step.is-live { border-left-color: var(--accent); }
+.handoff-step.is-terminal { border-left-color: #6bcb77; }
+.handoff-step.st-dead { border-left-color: var(--danger); background: rgba(255,107,122,0.06); }
+.handoff-step.st-pending { border-left-color: #ffc107; }
+.handoff-step.st-claimed { border-left-color: var(--accent); }
+.handoff-step.st-acked { border-left-color: var(--accent-2); }
+.handoff-step.st-done { border-left-color: #6bcb77; }
+.hs-idx {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  padding-top: 4px;
+}
+.hs-agents {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.hs-from, .hs-to {
+  font-weight: 700;
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(15, 20, 25, 0.55);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+}
+.hs-to {
+  border-color: rgba(91, 157, 255, 0.4);
+  color: var(--accent);
+}
+.hs-pipe {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  min-width: 88px;
+  justify-content: center;
+}
+.hs-line {
+  display: inline-block;
+  width: 14px;
+  height: 1px;
+  background: rgba(139, 155, 176, 0.55);
+}
+.hs-type {
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--accent-2);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hs-chev { font-size: 10px; color: var(--accent); }
+.hs-status {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.hs-status.st-pending { color: #ffc107; border-color: rgba(255,193,7,0.4); }
+.hs-status.st-claimed { color: var(--accent); border-color: rgba(91,157,255,0.45); }
+.hs-status.st-acked { color: var(--accent-2); border-color: rgba(61,214,198,0.4); }
+.hs-status.st-done { color: #6bcb77; border-color: rgba(107,203,119,0.45); }
+.hs-status.st-dead { color: var(--danger); border-color: rgba(255,107,122,0.45); }
+.hs-status.st-cancelled { color: var(--muted); }
+.hs-sum {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+}
+.hs-meta {
+  margin-top: 4px;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--muted);
+}
+/* flow graph slightly shorter so handoffs get room */
+.flow-canvas { max-height: 32vh; min-height: 160px; }
+.timeline { max-height: 22vh; }
 .flow-del.dead { border-color: rgba(255,107,122,0.45); background: rgba(255,107,122,0.08); }
 .flow-del .fd-agent { font-weight: 650; }
 .flow-del .fd-st {
