@@ -1,27 +1,29 @@
 ---
 name: session-hub
-description: Use A2A Event X MCP tools to list and search local Claude/Codex/OpenClaw/Grok/Antigravity sessions without leaving the agent.
+description: List and search local Claude/Codex/OpenClaw/Grok/Antigravity coding sessions via a2ax CLI or Event X Sessions UI. Context only — not the multi-agent task bus.
 ---
 
-# Session Hub (A2A Event X)
+# Session Hub (context only)
 
-When the user asks about **other CLI sessions**, **what Codex/Claude was doing**, or **local chat history across tools**, use the **a2a-event-x** MCP tools:
+Use when the user asks about **local coding CLI history** (what Claude/Codex did), not about **agent task handoffs**.
 
-1. `x_health` — see which providers are available on this machine
-2. `x_list_sessions` — list sessions (`provider`, `project`, `limit`)
-3. `x_get_messages` — read a session transcript (paginated)
-4. `x_search` — full-text search across tools
-5. `x_query_events` — pull A2A Event Log inbox for an agent (task bus, not transcripts)
+## Preferred
 
-## Do not confuse
+1. Human UI: open **A2A Event X** → **Sessions** (`http://127.0.0.1:8787/`)
+2. CLI:
+   ```bash
+   a2ax health
+   a2ax list --provider claude-code --limit 20
+   a2ax messages <session_id> --limit 50
+   a2ax search "keyword"
+   ```
 
-| Tool prefix | Meaning |
-|-------------|---------|
-| `x_*` | Local Session Hub + Event Log **query** (this skill) |
-| `a2a_*` | Remote Agent-to-Agent protocol (openclaw-a2a-plugin / gateway) |
+## Multi-agent tasks
+
+For pending/claim/done on the Event Log bus, use **`a2a-consumer`** skill and `a2a-v2.py` / `a2a-log.py` — **not** Session Hub.
 
 ## Rules
 
-- Prefer read tools first; do not enable projector writes unless the user asks.
-- Summarize transcripts; do not dump huge raw JSON into the user channel.
-- Resume hints are suggestions (`claude --resume …`); confirm before running destructive shell.
+- Sessions are **context**, not the product mainline.
+- Prefer summarize transcripts; avoid dumping huge JSON to the user.
+- Resume commands (`claude --resume …`) are suggestions; confirm before destructive shell.

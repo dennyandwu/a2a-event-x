@@ -1,6 +1,6 @@
 {
   "name": "a2a-event-x",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Multi-agent interaction console + A2A Event Log (B/S)",
   "type": "module",
@@ -11,12 +11,11 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @a2a-event-x/session-hub && npm run build -w @a2a-event-x/webapp && npm run build -w @a2a-event-x/cli && npm run build -w @a2a-event-x/mcp-server",
+    "build": "npm run build -w @a2a-event-x/session-hub && npm run build -w @a2a-event-x/webapp && npm run build -w @a2a-event-x/cli",
     "web": "npm run build -w @a2a-event-x/session-hub && npm run build -w @a2a-event-x/webapp && npm run start -w @a2a-event-x/webapp",
     "dev:web": "npm run web",
     "sync:log": "bash scripts/sync-event-log.sh",
     "a2ax": "node packages/cli/dist/index.js",
-    "dev:mcp": "npm run build && node packages/mcp-server/dist/index.js",
     "typecheck": "tsc -p packages/session-hub && tsc -p packages/webapp && tsc -p packages/cli",
     "event-log:v2": "python3 packages/event-log/a2a-v2.py",
     "event-log:v1": "python3 packages/event-log/scripts/a2a-log.py",
@@ -32,7 +31,6 @@
   },
   "keywords": [
     "a2a",
-    "mcp",
     "openclaw",
     "claude-code",
     "codex",

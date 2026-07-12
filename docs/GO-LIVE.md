@@ -13,7 +13,9 @@
 | 运维 | 系统 → Write Path / Ops Audit / Health |
 | 鉴权 | 默认 localhost 开放；设 `A2AX_TOKEN` 后 API 需 Bearer |
 
-**非 v1.0 范围（有意延后）**：MCP 主交付、标准 A2A 远程 mesh、非本机多租户鉴权产品化、hcom 投影。
+**非 v1.0 / 明确不做**：MCP（已移出本项目）、标准 A2A 远程 mesh 主路径、非本机多租户鉴权产品化、hcom 投影。
+
+**Agent 接入**：共用 Skill `skills/a2a-consumer` + `a2a-v2.py` / `a2a-log.py` CLI，不经 MCP。
 
 ## 快速启动
 
@@ -96,4 +98,5 @@ curl -s 'http://127.0.0.1:8787/api/interactions?limit=5' | python3 -c "import sy
 ## 版本
 
 - **v1.0.0**：主线可演示 + 真数据同步/指向 + 操作闭环 + 传递过程可视化  
-- 后续：只读模式开关、权威机部署包、MCP
+- **v1.1**：去掉 MCP；Agent 侧以 Skill + CLI 为准  
+- 后续：只读模式开关、权威机部署包、Skill 分发到各 agent 工作区

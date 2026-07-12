@@ -1,6 +1,6 @@
 # A2A Event X
 
-**多 Agent 交互管理指挥台**（本地优先 B/S）· **v1.0**
+**多 Agent 交互管理指挥台**（本地优先 B/S）· **v1.1**
 
 产品目标不是「多 CLI 聊天浏览器」，而是：**看见、调度、审计多个 agent 之间的任务与交互**。
 
@@ -8,9 +8,9 @@
 |--------|------|------|
 | **主线** | Event Log + **Agent 看板** | pending / claimed / acked / 操作闭环 |
 | 主线 | Workflows · Inbox | agent 传递过程 + correlation；claim / ack / done |
+| **Agent** | **Skill** [`skills/a2a-consumer`](skills/a2a-consumer/SKILL.md) | 教 agent 用 CLI 消费 Event Log（非 MCP） |
 | 上下文 | Sessions | coding CLI 历史 |
 | 运维 | **系统**（数据源 / Write Path / Ops Audit / Health） | 真数据同步 · 拓扑 · 审计 |
-| 后置 | MCP | 产品完成后 |
 
 ## Quick start
 

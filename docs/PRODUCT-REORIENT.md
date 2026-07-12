@@ -44,7 +44,7 @@ locked_at: 2026-07-12
 | Grok/Claude/Codex adapters | 个人 coding 会话 UX |
 | Event Log inbox claim/ack/done | ✅ 多 agent **交互** 的一角 |
 | Write Path / registry 下拉 | ✅ 交互基础设施的运维面 |
-| MCP 后置、独立 B/S | 产品形态 OK，**主题偏了** |
+| 独立 B/S（**无 MCP**） | 产品形态 OK；曾一度偏 Session 浏览器 |
 
 ### 偏离点（诚实结论）
 
@@ -117,7 +117,8 @@ locked_at: 2026-07-12
 ### 明确降级 / 不做（现阶段）
 
 - 不做「最好的多 CLI 聊天浏览器」功能竞赛  
-- 不把 MCP 当主交付  
+- **不做 MCP**；agent 用 CLI + Skill，人用 B/S  
+
 - 不优先 Grok transcript 美化（除非服务交互排障）  
 
 ## 6. 与已有资产的映射

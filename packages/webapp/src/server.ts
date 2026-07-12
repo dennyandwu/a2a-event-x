@@ -50,7 +50,7 @@ if (!process.env.A2A_LOG_HOME) {
 
 const hub = new SessionHub();
 const app = new Hono();
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 /** Optional shared secret: set A2AX_TOKEN to require Bearer / X-A2AX-Token on /api/* (health always open). */
 const API_TOKEN = process.env.A2AX_TOKEN || "";
 
@@ -495,7 +495,7 @@ app.get("/api/meta", (c) =>
     defaultView: "agents",
     secondaryModules: ["inbox", "sessions", "write-path", "ops-audit"],
     version: VERSION,
-    mcp: "deferred",
+    agentAccess: "cli+skill",
     landable: true,
     auth: API_TOKEN ? "token" : "open-localhost",
     data: {

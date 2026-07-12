@@ -16,10 +16,13 @@ Usage:
   a2ax show <session_id>
   a2ax messages <session_id> [--limit N]
   a2ax search <query>
-  a2ax mcp                 # start stdio MCP server
-  a2ax log <args...>       # proxy to packages/event-log (python a2a-v2.py)
+  a2ax log <args...>       # proxy to packages/event-log/a2a-v2.py
+  a2ax web                 # print B/S console URL hint
 
 Providers: claude-code | codex | openclaw | grok-build | antigravity-cli
+
+Agent consumption: use a2a-v2.py / a2a-log.py (see skills/a2a-consumer).
+Human console: http://127.0.0.1:8787/ (npm run web)
 `);
   process.exit(1);
 }
@@ -76,18 +79,15 @@ async function main() {
     return;
   }
 
-  if (cmd === "mcp") {
-    const mcpEntry = path.join(repoRoot, "packages/mcp-server/dist/index.js");
-    const child = spawn(process.execPath, [mcpEntry], {
-      stdio: "inherit",
-      env: process.env,
-    });
-    child.on("exit", (code) => process.exit(code ?? 0));
+  if (cmd === "web") {
+    const host = process.env.A2AX_HOST || "127.0.0.1";
+    const port = process.env.A2AX_PORT || "8787";
+    console.log(`A2A Event X console: http://${host}:${port}/`);
+    console.log(`Start: npm run web`);
     return;
   }
 
   if (cmd === "log") {
-    // Prefer a2a-v2.py; if first arg is classic, document missing a2a-log.py
     const script = path.join(repoRoot, "packages/event-log/a2a-v2.py");
     const child = spawn("python3", [script, ...rest], {
       stdio: "inherit",
