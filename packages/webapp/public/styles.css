@@ -148,6 +148,29 @@ nav { display: flex; flex-direction: column; gap: 4px; }
   color: var(--text);
 }
 .data-source-bar { margin-top: 4px; }
+.readonly-banner {
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 12px;
+  line-height: 1.45;
+  border-bottom: 1px solid rgba(255, 193, 7, 0.45);
+  background: linear-gradient(90deg, rgba(255, 193, 7, 0.16), rgba(22, 29, 39, 0.9));
+  color: var(--text);
+}
+.readonly-banner strong { color: #ffc107; }
+body.is-readonly .btn:not(.ghost):not(#refresh-board):not(#refresh-workflows):not(#refresh-system):not(#btn-data-sync):not(#btn-data-refresh):not(#demo-seed) {
+  /* keep primary actions visually muted when they mutate — JS still enforces via API */
+}
+body.is-readonly .detail-actions .btn:not(.ghost),
+body.is-readonly #agent-ops .btn,
+body.is-readonly #event-ops .btn,
+body.is-readonly #claim-events,
+body.is-readonly #demo-seed,
+body.is-readonly #demo-wipe,
+body.is-readonly #btn-data-backfill {
+  opacity: 0.45;
+  pointer-events: none;
+}
 .cards {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 10px; padding: 0 16px 12px;

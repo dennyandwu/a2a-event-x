@@ -1,8 +1,8 @@
-# A2A Event X — Go-Live (v1.0)
+# A2A Event X — Go-Live (v1.2)
 
 本地优先的多 Agent 交互指挥台 **落地清单**。
 
-## 验收定义（v1.0）
+## 验收定义（v1.0+）
 
 | 项 | 标准 |
 |----|------|
@@ -26,7 +26,12 @@ npm run web
 # → http://127.0.0.1:8787/
 ```
 
-## 接生产 Event Log（真数据）
+## 权威机 vs 笔记本镜像（必读）
+
+| 角色 | 机器 | 用法 |
+|------|------|------|
+| **权威 (authority)** | **Mac Mini**（Event Log 本机路径） | 可 claim / done / requeue；**不要**设 `A2AX_READONLY` |
+| **镜像 (mirror)** | 开发本机 rsync 副本 | **只读巡检**：`A2AX_READONLY=1` 或 `npm run web:ro` |
 
 生产目录在 **Mac Mini**（示例）：
 
@@ -37,32 +42,42 @@ npm run web
   registry-agents.json
 ```
 
-### 方式 A — CLI 同步（推荐）
+Agent（OpenClaw / Claude Code）**已直接**消费该 Event Log；指挥台是给人看的，不是再给 agent 上 Skill。
+
+### 方式 A — 笔记本：同步 + 只读（推荐日常）
 
 ```bash
 # 需本机 SSH 配置 Host macmini-ts
-./scripts/sync-event-log.sh
+./scripts/sync-event-log.sh   # 或 npm run sync:log
 
-# 可选覆盖
-export A2AX_SYNC_REMOTE='macmini-ts:~/.openclaw/workspace/state/a2a-log/'
 export A2A_LOG_HOME="$HOME/.openclaw/workspace/state/a2a-log"
-./scripts/sync-event-log.sh
-
-npm run web
+npm run web:ro                # A2AX_READONLY=1 — 禁止 claim/done
 ```
 
-### 方式 B — 控制台
+只读下仍允许 **`POST /api/data/sync`** 刷新镜像。
+
+### 方式 B — 控制台同步
 
 1. 打开 **系统 → Write Path**
 2. 点 **「从 Mac Mini 同步真数据」**
-3. 若仅有 JSONL、看板仍空 → **「JSONL → sqlite backfill」**
-4. 回 **Agents** 刷新
+3. 镜像机请用 `web:ro`，勿在副本上 backfill/claim（只读会拦）
 
-### 方式 C — 直接指目录
+### 方式 C — Mac Mini 权威可写
+
+```bash
+# 在 Mac Mini 上 clone 本仓库，指向本机 a2a-log（默认路径即可）
+unset A2AX_READONLY
+npm run web
+# → 对人：可操作；对 agent：继续走既有 Event Log 协议
+```
+
+### 方式 D — 直接指目录
 
 ```bash
 export A2A_LOG_HOME=/path/to/a2a-log
 export A2A_V2_DB=$A2A_LOG_HOME/db/a2a-v2.sqlite
+# 镜像务必：
+export A2AX_READONLY=1
 npm run web
 ```
 
@@ -75,6 +90,7 @@ npm run web
 | `A2A_LOG_CLI` | a2a-log.py 路径 |
 | `A2AX_HOST` / `A2AX_PORT` | 绑定（默认 127.0.0.1:8787） |
 | `A2AX_TOKEN` | 若设置，则 `/api/*` 需 `Authorization: Bearer` 或 `X-A2AX-Token` |
+| **`A2AX_READONLY`** | `1`/`true`：禁止 claim/done 等变更（镜像推荐）；仍可 sync |
 | `A2AX_SYNC_REMOTE` | rsync 源（默认 macmini-ts 生产路径） |
 | `A2AX_AUDIT_PATH` | ops audit JSONL |
 
@@ -82,8 +98,9 @@ npm run web
 
 1. **默认只绑 localhost**；不要对公网裸暴露。
 2. 局域网共享时设置 `A2AX_TOKEN`，并考虑 `A2AX_HOST=0.0.0.0` 仅在可信网。
-3. **rsync 到本机的是生产副本**；在本机 claim/done 会改**本地 sqlite**，不会自动写回 Mac Mini，除非你把 `A2A_LOG_HOME` 指到实时共享盘或再 rsync 回去（危险，生产操作应在权威机做）。
-4. 日常指挥若以 Mac Mini 为准，优先在 **权威机** 上跑 Event X，或只读同步后只做查看。
+3. **rsync 副本 + 只读**：笔记本用 `A2AX_READONLY=1`，避免 claim 只改本地 sqlite、与 Mac Mini 权威状态分叉。
+4. **可写操作只在权威机**（Mac Mini 本机 Event Log）。
+5. Agent 继续走既有协议；指挥台不替代 agent 消费路径。
 
 ## 冒烟检查
 
@@ -99,4 +116,5 @@ curl -s 'http://127.0.0.1:8787/api/interactions?limit=5' | python3 -c "import sy
 
 - **v1.0.0**：主线可演示 + 真数据同步/指向 + 操作闭环 + 传递过程可视化  
 - **v1.1**：去掉 MCP；Agent 侧继续走既有 Event Log 协议（非 Skill 强制）  
-- 后续：指挥台打磨 / 只读模式 / 权威机部署；**Skill 推广延后**
+- **v1.2**：`A2AX_READONLY` 只读模式 + 权威/镜像分工文档  
+- 后续：Mac Mini 常驻部署；Skill 推广仍延后

@@ -1,6 +1,6 @@
 # A2A Event X
 
-**多 Agent 交互管理指挥台**（本地优先 B/S）· **v1.1**
+**多 Agent 交互管理指挥台**（本地优先 B/S）· **v1.2**
 
 产品目标不是「多 CLI 聊天浏览器」，而是：**看见、调度、审计多个 agent 之间的任务与交互**。
 
@@ -28,14 +28,15 @@ npm run web
 ### 真数据（生产 Event Log）
 
 ```bash
-# SSH 可达 macmini-ts 时：
+# 笔记本镜像（推荐只读，防误改副本）
 npm run sync:log
-npm run web
+npm run web:ro          # A2AX_READONLY=1
+
+# Mac Mini 权威可写：在本机 a2a-log 上
+# unset A2AX_READONLY && npm run web
 ```
 
-或控制台 **系统 → Write Path →「从 Mac Mini 同步真数据」**。
-
-详见 [docs/GO-LIVE.md](docs/GO-LIVE.md)。
+或控制台 **系统 → Write Path →「从 Mac Mini 同步真数据」**。详见 [docs/GO-LIVE.md](docs/GO-LIVE.md)。
 
 ### 无生产数据时
 

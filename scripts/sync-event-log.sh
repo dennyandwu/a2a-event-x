@@ -25,4 +25,6 @@ if [[ -f "$DB" ]]; then
   ls -lh "$DB"
   sqlite3 "$DB" "SELECT 'events', COUNT(*) FROM events; SELECT 'deliveries', COUNT(*) FROM deliveries; SELECT status, COUNT(*) FROM deliveries GROUP BY status ORDER BY 2 DESC LIMIT 8;" 2>/dev/null || true
 fi
-echo "Done. Restart Event X (npm run web) if it was already running."
+echo "Done. Restart Event X if it was already running."
+echo "Laptop mirror tip: A2AX_READONLY=1 npm run web   # or: npm run web:ro"
+echo "Authority (Mac Mini): unset A2AX_READONLY before claim/done."

@@ -50,9 +50,22 @@ if (!process.env.A2A_LOG_HOME) {
 
 const hub = new SessionHub();
 const app = new Hono();
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 /** Optional shared secret: set A2AX_TOKEN to require Bearer / X-A2AX-Token on /api/* (health always open). */
 const API_TOKEN = process.env.A2AX_TOKEN || "";
+/**
+ * Read-only console: block claim/ack/done and other mutations.
+ * Use on laptop mirrors of production Event Log (rsync copy).
+ * Set A2AX_READONLY=1|true|yes. Sync (rsync pull) remains allowed.
+ * Authoritative write host: unset A2AX_READONLY (typically Mac Mini).
+ */
+function envFlag(name: string): boolean {
+  const v = (process.env[name] || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+const READONLY = envFlag("A2AX_READONLY");
+/** POST paths still allowed in readonly (refresh local mirror only). */
+const READONLY_POST_ALLOW = new Set(["/api/data/sync"]);
 
 app.use("/api/*", cors({ origin: "*" }));
 
@@ -70,6 +83,24 @@ app.use("/api/*", async (c, next) => {
   return next();
 });
 
+app.use("/api/*", async (c, next) => {
+  if (!READONLY) return next();
+  if (c.req.method === "GET" || c.req.method === "HEAD" || c.req.method === "OPTIONS") {
+    return next();
+  }
+  const pathName = new URL(c.req.url).pathname;
+  if (READONLY_POST_ALLOW.has(pathName)) return next();
+  return c.json(
+    {
+      error: "readonly",
+      message:
+        "A2AX_READONLY is set — mutations disabled. Use Mac Mini (authority) for claim/done, or unset A2AX_READONLY.",
+      allow: ["GET", ...READONLY_POST_ALLOW],
+    },
+    403,
+  );
+});
+
 function jsonStatus(c: { json: (b: unknown, s?: number) => Response }, status: number, body: unknown) {
   return c.json(body, status as 200);
 }
@@ -85,7 +116,10 @@ app.get("/api/health", async (c) => {
     version: VERSION,
     landable: true,
     auth: API_TOKEN ? "token" : "open-localhost",
+    readonly: READONLY,
+    authority: !READONLY,
     dataMode: p.dataMode,
+    agentAccess: "event-log-protocol",
     ...h,
     eventLog: status,
     opsAudit: readRecentOps(5),
@@ -498,6 +532,8 @@ app.get("/api/meta", (c) =>
     agentAccess: "event-log-protocol",
     landable: true,
     auth: API_TOKEN ? "token" : "open-localhost",
+    readonly: READONLY,
+    authority: !READONLY,
     data: {
       home: paths.home,
       dataMode: paths.dataMode,
@@ -523,6 +559,7 @@ app.get("*", async (c) => {
 
 console.log(`A2A Event X — multi-agent interaction console → http://${HOST}:${PORT}`);
 console.log(`  board:  http://${HOST}:${PORT}/api/agents/board`);
+console.log(`  mode:   ${READONLY ? "READONLY (mutations blocked)" : "authority/write"} · data ${paths.dataMode}`);
 console.log(`  inbox:  /api/events/*  · sessions secondary`);
 
 serve({ fetch: app.fetch, hostname: HOST, port: PORT });

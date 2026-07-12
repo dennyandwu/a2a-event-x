@@ -1,6 +1,6 @@
 {
   "name": "a2a-event-x",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Multi-agent interaction console + A2A Event Log (B/S)",
   "type": "module",
@@ -13,6 +13,7 @@
   "scripts": {
     "build": "npm run build -w @a2a-event-x/session-hub && npm run build -w @a2a-event-x/webapp && npm run build -w @a2a-event-x/cli",
     "web": "npm run build -w @a2a-event-x/session-hub && npm run build -w @a2a-event-x/webapp && npm run start -w @a2a-event-x/webapp",
+    "web:ro": "A2AX_READONLY=1 npm run web",
     "dev:web": "npm run web",
     "sync:log": "bash scripts/sync-event-log.sh",
     "a2ax": "node packages/cli/dist/index.js",

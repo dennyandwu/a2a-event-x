@@ -18,6 +18,12 @@ let agentStatusFilter = "active";
 let autoRefreshTimer = null;
 let boardBusy = false;
 let lastBoardAt = null;
+/** @type {{ readonly?: boolean, authority?: boolean, dataMode?: string, version?: string } | null} */
+let appMeta = null;
+
+function isReadonly() {
+  return Boolean(appMeta?.readonly);
+}
 
 function setLoading(on) {
   let bar = document.getElementById("global-loading");
@@ -41,10 +47,53 @@ async function api(path, opts) {
     data = { raw: text };
   }
   if (!res.ok) {
-    const msg = data.error || data.detail || text || res.status;
+    if (data.error === "readonly") {
+      throw new Error(
+        data.message || "只读模式：禁止变更。请在 Mac Mini 权威机操作，或取消 A2AX_READONLY。",
+      );
+    }
+    const msg = data.error || data.detail || data.message || text || res.status;
     throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
   }
   return data;
+}
+
+function ensureReadonlyBanner() {
+  let el = document.getElementById("readonly-banner");
+  if (!isReadonly()) {
+    if (el) el.remove();
+    document.body.classList.remove("is-readonly");
+    return;
+  }
+  document.body.classList.add("is-readonly");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "readonly-banner";
+    el.className = "readonly-banner";
+    const main = document.querySelector(".main");
+    if (main) main.insertBefore(el, main.firstChild);
+  }
+  el.innerHTML =
+    `<strong>只读模式</strong> · 本机为 Event Log 镜像/副本，claim / done / requeue 等已禁用。` +
+    ` 同步仍可用。权威操作请在 <b>Mac Mini</b> 运行控制台（勿设 A2AX_READONLY）。` +
+    (appMeta?.dataMode ? ` · dataMode=${escapeHtml(appMeta.dataMode)}` : "");
+}
+
+async function loadAppMeta() {
+  try {
+    appMeta = await api("/api/meta");
+  } catch {
+    try {
+      appMeta = await api("/api/health");
+    } catch {
+      appMeta = null;
+    }
+  }
+  ensureReadonlyBanner();
+  const foot = document.querySelector(".sidebar-foot .muted");
+  if (foot && appMeta?.version) {
+    foot.textContent = `v${appMeta.version} · ${isReadonly() ? "只读" : "可写"} · 交互优先`;
+  }
 }
 
 function fmtTime(d = new Date()) {
@@ -1615,7 +1664,8 @@ async function loadPaths() {
 async function syncProdData() {
   if (
     !confirm(
-      "将通过 rsync 从 A2AX_SYNC_REMOTE（默认 macmini-ts 生产 a2a-log）拉到本机 A2A_LOG_HOME。\n可能覆盖本地 demo。继续？",
+      "将通过 rsync 从 A2AX_SYNC_REMOTE（默认 macmini-ts 生产 a2a-log）拉到本机 A2A_LOG_HOME。\n" +
+        "可能覆盖本地文件。本机建议 A2AX_READONLY=1，勿在副本上 claim/done。\n继续？",
     )
   ) {
     return;
@@ -1644,6 +1694,10 @@ async function syncProdData() {
 }
 
 async function backfillData() {
+  if (isReadonly()) {
+    dataToast("只读模式禁止 backfill（会改 sqlite）。请在可写权威机执行，或取消 A2AX_READONLY。", "err");
+    return;
+  }
   if (
     !confirm(
       "运行 a2a-v2-backfill：把 events/*.jsonl 导入 sqlite。大库可能较慢。继续？",
@@ -1788,4 +1842,4 @@ $("#copy-resume").addEventListener("click", async () => {
   }
 });
 
-loadBoard();
+loadAppMeta().finally(() => loadBoard());
