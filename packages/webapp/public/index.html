@@ -98,6 +98,14 @@
           </div>
           <div class="filters hidden" id="workflow-filters">
             <button id="refresh-workflows" class="btn">刷新 workflows</button>
+            <select id="workflow-phase" title="phase filter">
+              <option value="all" selected>全部（含历史）</option>
+              <option value="active">进行中</option>
+              <option value="problem">有问题 (dead)</option>
+              <option value="history">仅历史终态</option>
+            </select>
+            <input id="workflow-filter" type="search" placeholder="筛选 correlation / topic / agent…" style="min-width:180px" />
+            <span id="workflow-summary" class="muted"></span>
           </div>
         </header>
 
@@ -156,7 +164,7 @@
             <div class="list-pane">
               <div class="pane-head">
                 <h2>Workflows</h2>
-                <span class="muted">by correlation_id</span>
+                <span class="muted">含 done 历史 · 便于回溯排障</span>
               </div>
               <div id="workflow-list" class="list"></div>
             </div>

@@ -760,11 +760,16 @@ print(json.dumps({"requeued": n}))
   }
 }
 
-/** Recent correlation workflows + detail timeline. */
+/** Recent correlation workflows + detail timeline (includes historical done). */
 export async function listCorrelations(
   repoRoot: string,
-  limit = 30,
-): Promise<{ ok: boolean; correlations: Array<Record<string, unknown>>; error?: string }> {
+  limit = 80,
+): Promise<{
+  ok: boolean;
+  correlations: Array<Record<string, unknown>>;
+  summary?: Record<string, number>;
+  error?: string;
+}> {
   const p = eventLogPaths(repoRoot);
   if (!p.dbExists) {
     return { ok: false, correlations: [], error: "sqlite missing" };
@@ -772,7 +777,7 @@ export async function listCorrelations(
   const script = `
 import json, sqlite3
 db = ${JSON.stringify(p.db)}
-limit = ${Math.min(Math.max(limit, 1), 100)}
+limit = ${Math.min(Math.max(limit, 1), 200)}
 c = sqlite3.connect(db)
 c.row_factory = sqlite3.Row
 rows = c.execute(
@@ -781,7 +786,8 @@ rows = c.execute(
             MIN(ts) AS first_ts,
             MAX(ts) AS last_ts,
             GROUP_CONCAT(DISTINCT type) AS types,
-            GROUP_CONCAT(DISTINCT from_agent) AS from_agents
+            GROUP_CONCAT(DISTINCT from_agent) AS from_agents,
+            GROUP_CONCAT(DISTINCT topic) AS topics
      FROM events
      WHERE correlation_id IS NOT NULL AND correlation_id != ''
      GROUP BY correlation_id
@@ -791,7 +797,6 @@ rows = c.execute(
 ).fetchall()
 out = []
 for r in rows:
-  # delivery status rollup for events in this correlation
   st = c.execute(
     """SELECT d.status, COUNT(*) AS n
        FROM deliveries d
@@ -801,16 +806,66 @@ for r in rows:
     (r["correlation_id"],),
   ).fetchall()
   by_status = {x["status"]: x["n"] for x in st}
+  pending = by_status.get("pending", 0)
+  claimed = by_status.get("claimed", 0)
+  acked = by_status.get("acked", 0)
+  done = by_status.get("done", 0)
+  dead = by_status.get("dead", 0)
+  cancelled = by_status.get("cancelled", 0)
+  active = pending + claimed + acked
+  terminal = done + cancelled
+  total_d = sum(by_status.values()) or 0
+  # phase for history / triage
+  if dead > 0:
+    phase = "problem"
+  elif active > 0 and terminal > 0:
+    phase = "mixed"   # in-flight + some done history
+  elif active > 0:
+    phase = "active"
+  elif terminal > 0 or total_d == 0:
+    phase = "history"  # fully terminal (done/cancelled) — keep for postmortem
+  else:
+    phase = "other"
+  to_agents = c.execute(
+    """SELECT GROUP_CONCAT(DISTINCT d.to_agent)
+       FROM deliveries d
+       JOIN events e ON e.source_file=d.source_file AND e.seq=d.seq
+       WHERE e.correlation_id=?""",
+    (r["correlation_id"],),
+  ).fetchone()[0]
   out.append({
     "correlation_id": r["correlation_id"],
     "event_count": r["event_count"],
     "first_ts": r["first_ts"],
     "last_ts": r["last_ts"],
     "types": r["types"],
+    "topics": r["topics"],
     "from_agents": r["from_agents"],
+    "to_agents": to_agents,
     "delivery_status": by_status,
+    "counts": {
+      "pending": pending, "claimed": claimed, "acked": acked,
+      "done": done, "dead": dead, "cancelled": cancelled,
+      "active": active, "terminal": terminal, "deliveries": total_d,
+    },
+    "phase": phase,
   })
-print(json.dumps({"correlations": out}))
+# sort: problem → active/mixed → other → history; within group last_ts desc
+from collections import defaultdict
+rank = {"problem": 0, "active": 1, "mixed": 1, "other": 2, "history": 3}
+buckets = defaultdict(list)
+for x in out:
+  buckets[rank.get(x["phase"], 9)].append(x)
+ordered = []
+for k in sorted(buckets.keys()):
+  ordered.extend(sorted(buckets[k], key=lambda x: x.get("last_ts") or "", reverse=True))
+summary = {
+  "total": len(ordered),
+  "active": sum(1 for x in ordered if x["phase"] in ("active", "mixed")),
+  "problem": sum(1 for x in ordered if x["phase"] == "problem"),
+  "history": sum(1 for x in ordered if x["phase"] == "history"),
+}
+print(json.dumps({"correlations": ordered, "summary": summary}))
 `;
   const r = await runPython("-c", [script], {
     ...process.env,
@@ -822,8 +877,13 @@ print(json.dumps({"correlations": out}))
   try {
     const body = JSON.parse(r.stdout) as {
       correlations: Array<Record<string, unknown>>;
+      summary?: Record<string, number>;
     };
-    return { ok: true, correlations: body.correlations };
+    return {
+      ok: true,
+      correlations: body.correlations,
+      summary: body.summary,
+    };
   } catch {
     return { ok: false, correlations: [], error: "parse failed" };
   }

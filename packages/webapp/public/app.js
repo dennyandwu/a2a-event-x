@@ -600,34 +600,139 @@ async function loadAudit() {
 
 // ── Workflows ─────────────────────────────────────────────
 
+/** @type {Array<any>} */
+let workflowListCache = [];
+/** @type {Record<string, number>|null} */
+let workflowSummary = null;
+
+const WORKFLOW_PHASE_LABEL = {
+  active: "进行中",
+  mixed: "进行中+历史",
+  problem: "有问题",
+  history: "历史",
+  other: "其他",
+};
+
+function workflowPhaseOf(w) {
+  if (w.phase) return w.phase;
+  const st = w.delivery_status || w.counts || {};
+  const dead = st.dead || 0;
+  const active = (st.pending || 0) + (st.claimed || 0) + (st.acked || 0);
+  const terminal = (st.done || 0) + (st.cancelled || 0);
+  if (dead) return "problem";
+  if (active && terminal) return "mixed";
+  if (active) return "active";
+  if (terminal) return "history";
+  return "other";
+}
+
+function renderWorkflowList() {
+  const el = $("#workflow-list");
+  if (!el) return;
+  const phaseFilter = $("#workflow-phase")?.value || "all";
+  const q = ($("#workflow-filter")?.value || "").trim().toLowerCase();
+  let list = workflowListCache.slice();
+
+  if (phaseFilter === "active") {
+    list = list.filter((w) => ["active", "mixed"].includes(workflowPhaseOf(w)));
+  } else if (phaseFilter === "problem") {
+    list = list.filter((w) => workflowPhaseOf(w) === "problem");
+  } else if (phaseFilter === "history") {
+    list = list.filter((w) => workflowPhaseOf(w) === "history");
+  }
+  // phaseFilter === "all" keeps history + active + problem
+
+  if (q) {
+    list = list.filter((w) => {
+      const hay = [
+        w.correlation_id,
+        w.topics,
+        w.types,
+        w.from_agents,
+        w.to_agents,
+        workflowPhaseOf(w),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  const sum = workflowSummary || {};
+  if ($("#workflow-summary")) {
+    $("#workflow-summary").textContent =
+      `显示 ${list.length}/${workflowListCache.length}` +
+      (sum.total != null
+        ? ` · 进行中 ${sum.active || 0} · 问题 ${sum.problem || 0} · 历史 ${sum.history || 0}`
+        : "");
+  }
+
+  el.innerHTML = "";
+  if (!list.length) {
+    el.innerHTML = `<div class="muted" style="padding:12px">${
+      workflowListCache.length
+        ? "当前筛选无结果 — 可切换「全部（含历史）」查看 done 终态流程"
+        : "暂无 correlation 数据"
+    }</div>`;
+    return;
+  }
+
+  // optional section headers when showing all
+  let lastSection = "";
+  for (const w of list) {
+    const phase = workflowPhaseOf(w);
+    const section =
+      phase === "problem"
+        ? "问题"
+        : phase === "history"
+          ? "历史终态"
+          : "进行中";
+    if (phaseFilter === "all" && section !== lastSection) {
+      lastSection = section;
+      const head = document.createElement("div");
+      head.className = "wf-section";
+      head.textContent = section;
+      el.appendChild(head);
+    }
+
+    const btn = document.createElement("button");
+    btn.className =
+      "item wf-item phase-" +
+      phase +
+      (activeWorkflowId === w.correlation_id ? " active" : "");
+    const st = w.delivery_status || {};
+    const c = w.counts || {};
+    const pills = [];
+    if (st.pending || c.pending) pills.push(`p${st.pending || c.pending || 0}`);
+    if (st.claimed || c.claimed) pills.push(`c${st.claimed || c.claimed || 0}`);
+    if (st.acked || c.acked) pills.push(`a${st.acked || c.acked || 0}`);
+    if (st.done || c.done) pills.push(`✓${st.done || c.done || 0}`);
+    if (st.dead || c.dead) pills.push(`☠${st.dead || c.dead || 0}`);
+    if (st.cancelled || c.cancelled) pills.push(`∅${st.cancelled || c.cancelled || 0}`);
+    const topic = (w.topics || "").split(",")[0] || "";
+    btn.innerHTML = `
+      <div class="row1">
+        <span class="wf-phase-tag phase-${phase}">${escapeHtml(WORKFLOW_PHASE_LABEL[phase] || phase)}</span>
+        <span class="wf-id">${escapeHtml(w.correlation_id)}</span>
+        <span class="tag">${w.event_count} evt</span>
+      </div>
+      <div class="row2">${escapeHtml(w.last_ts || "")}${topic ? ` · ${escapeHtml(topic)}` : ""} · ${escapeHtml(pills.join(" ") || "—")}</div>
+      <div class="row2 wf-agents">${escapeHtml([w.from_agents, w.to_agents].filter(Boolean).join(" → ") || "")}</div>
+    `;
+    btn.onclick = () => openWorkflow(w.correlation_id);
+    el.appendChild(btn);
+  }
+}
+
 async function loadWorkflows() {
   const el = $("#workflow-list");
   el.innerHTML = `<div class="muted" style="padding:12px">加载…</div>`;
   try {
-    const data = await api("/api/interactions?limit=40");
-    const list = data.correlations || [];
-    el.innerHTML = "";
-    if (!list.length) {
-      el.innerHTML = `<div class="muted" style="padding:12px">暂无 correlation 数据</div>`;
-      return;
-    }
-    for (const w of list) {
-      const btn = document.createElement("button");
-      btn.className = "item";
-      const st = w.delivery_status || {};
-      const stStr = Object.entries(st)
-        .map(([k, v]) => `${k}:${v}`)
-        .join(" ");
-      btn.innerHTML = `
-        <div class="row1">
-          <span>${escapeHtml(w.correlation_id)}</span>
-          <span class="tag">${w.event_count} evt</span>
-        </div>
-        <div class="row2">${escapeHtml(w.last_ts || "")} · ${escapeHtml(w.from_agents || "")} · ${escapeHtml(stStr)}</div>
-      `;
-      btn.onclick = () => openWorkflow(w.correlation_id);
-      el.appendChild(btn);
-    }
+    const data = await api("/api/interactions?limit=80");
+    workflowListCache = data.correlations || [];
+    workflowSummary = data.summary || null;
+    renderWorkflowList();
   } catch (e) {
     el.innerHTML = `<div class="muted" style="padding:12px">${escapeHtml(String(e.message || e))}</div>`;
   }
@@ -762,7 +867,15 @@ function buildFlowNodes(rows) {
 }
 
 function flowStatusRollup(nodes) {
-  const counts = { pending: 0, claimed: 0, acked: 0, done: 0, dead: 0, other: 0 };
+  const counts = {
+    pending: 0,
+    claimed: 0,
+    acked: 0,
+    done: 0,
+    dead: 0,
+    cancelled: 0,
+    other: 0,
+  };
   for (const n of nodes) {
     for (const d of n.deliveries) {
       const st = d.status || "other";
@@ -803,13 +916,28 @@ function renderWorkflowFlow(rows) {
       return { d: `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`, live };
     });
 
+  const activeN = counts.pending + counts.claimed + counts.acked;
+  const histN = counts.done + (counts.cancelled || 0);
+  const phaseHint =
+    counts.dead > 0
+      ? "phase:problem"
+      : activeN > 0
+        ? "phase:active"
+        : histN > 0
+          ? "phase:history"
+          : "phase:other";
   const statsHtml = `<div class="flow-stats">
+    <span class="wf-phase-tag ${phaseHint.replace(":", "-")}">${
+      counts.dead > 0 ? "有问题" : activeN > 0 ? "进行中" : "历史终态"
+    }</span>
     <span><b>${nodes.length}</b> steps</span>
     <span>pending <b>${counts.pending}</b></span>
     <span>claimed <b>${counts.claimed}</b></span>
     <span>acked <b>${counts.acked}</b></span>
     <span>done <b>${counts.done}</b></span>
     <span>dead <b>${counts.dead}</b></span>
+    ${histN && activeN ? `<span class="muted">含历史完成步 ${histN}</span>` : ""}
+    ${!activeN && histN ? `<span class="muted">全部终态 · 可回溯排障</span>` : ""}
   </div>`;
 
   const svgPaths = edges
@@ -822,6 +950,9 @@ function renderWorkflowFlow(rows) {
       const hasLive = n.deliveries.some(
         (d) => d.status === "claimed" || d.status === "pending" || d.status === "acked",
       );
+      const allTerminal =
+        n.deliveries.length > 0 &&
+        n.deliveries.every((d) => d.status === "done" || d.status === "cancelled");
       const dels =
         n.deliveries
           .map((d) => {
@@ -829,16 +960,18 @@ function renderWorkflowFlow(rows) {
               d.status === "claimed" || d.status === "acked"
                 ? `<span class="flow-pulse" title="in flight"></span>`
                 : "";
+            const mark =
+              d.status === "done" ? "✓ " : d.status === "cancelled" ? "∅ " : "";
             return `<div class="flow-del ${escapeHtml(d.status)}">
               <span class="fd-agent">${pulse}${escapeHtml(d.to_agent)}</span>
-              <span class="fd-st">${escapeHtml(d.status)}</span>
+              <span class="fd-st">${mark}${escapeHtml(d.status)}</span>
             </div>`;
           })
           .join("") || `<div class="flow-del"><span class="muted">no delivery</span></div>`;
-      return `<div class="flow-node ${hasDead ? "has-dead" : ""} ${hasLive ? "has-live" : ""}"
+      return `<div class="flow-node ${hasDead ? "has-dead" : ""} ${hasLive ? "has-live" : ""} ${allTerminal ? "is-history" : ""}"
         style="left:${n.x}px;top:${n.y}px;width:${n.w}px"
         data-key="${escapeHtml(n.key)}" title="seq ${n.seq}">
-        <div class="fn-type">${escapeHtml(n.type || "event")}</div>
+        <div class="fn-type">${escapeHtml(n.type || "event")}${allTerminal ? ` <span class="fn-hist-badge">历史</span>` : ""}</div>
         <div class="fn-sum">${escapeHtml(String(n.summary || ""))}</div>
         <div class="fn-meta">seq ${escapeHtml(String(n.seq ?? "—"))} · from ${escapeHtml(n.from || "?")}${
           n.causation_id ? ` · ← ${escapeHtml(String(n.causation_id))}` : ""
@@ -911,6 +1044,8 @@ async function openWorkflow(cid) {
     }
     renderWorkflowFlow(events);
     renderWorkflowTimeline(events);
+    // keep list selection highlight
+    renderWorkflowList();
   } catch (err) {
     flow.classList.add("empty");
     flow.textContent = String(err.message || err);
@@ -1405,6 +1540,8 @@ $("#aop-done").addEventListener("click", () => agentDeliveryOp("done"));
 $("#aop-renew").addEventListener("click", () => agentDeliveryOp("renew"));
 $("#aop-cancel").addEventListener("click", () => agentDeliveryOp("cancel"));
 $("#refresh-workflows").addEventListener("click", loadWorkflows);
+$("#workflow-phase")?.addEventListener("change", renderWorkflowList);
+$("#workflow-filter")?.addEventListener("input", renderWorkflowList);
 $("#refresh-workflow-detail")?.addEventListener("click", () => {
   if (activeWorkflowId) openWorkflow(activeWorkflowId);
 });

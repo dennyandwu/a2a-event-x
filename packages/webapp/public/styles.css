@@ -411,7 +411,58 @@ nav { display: flex; flex-direction: column; gap: 4px; }
 .flow-del.pending { border-color: rgba(255,193,7,0.35); }
 .flow-del.claimed { border-color: rgba(91,157,255,0.4); background: rgba(91,157,255,0.08); }
 .flow-del.acked { border-color: rgba(61,214,198,0.35); }
-.flow-del.done { border-color: rgba(107,203,119,0.35); opacity: 0.85; }
+.flow-del.done { border-color: rgba(107,203,119,0.55); background: rgba(107,203,119,0.1); }
+.flow-del.cancelled { border-color: rgba(139,155,176,0.45); opacity: 0.9; }
+.flow-node.is-history {
+  border-style: dashed;
+  border-color: rgba(107, 203, 119, 0.45);
+  background: linear-gradient(160deg, rgba(107,203,119,0.06), var(--panel));
+}
+.flow-node .fn-hist-badge {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #6bcb77;
+  border: 1px solid rgba(107,203,119,0.4);
+  border-radius: 999px;
+  padding: 0 6px;
+  vertical-align: middle;
+}
+.wf-section {
+  padding: 10px 12px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.wf-item .wf-id {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.wf-item .row1 { gap: 6px; }
+.wf-phase-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.wf-phase-tag.phase-active,
+.wf-phase-tag.phase-mixed { color: var(--accent); border-color: rgba(91,157,255,0.45); background: rgba(91,157,255,0.1); }
+.wf-phase-tag.phase-problem { color: var(--danger); border-color: rgba(255,107,122,0.45); background: rgba(255,107,122,0.1); }
+.wf-phase-tag.phase-history { color: #6bcb77; border-color: rgba(107,203,119,0.45); background: rgba(107,203,119,0.1); }
+.wf-item.phase-history { opacity: 1; }
+.wf-item.phase-problem { box-shadow: inset 3px 0 0 var(--danger); }
+.wf-item .wf-agents { opacity: 0.85; font-size: 10px; }
+.flow-stats .wf-phase-tag { margin-right: 4px; }
 .flow-del.dead { border-color: rgba(255,107,122,0.45); background: rgba(255,107,122,0.08); }
 .flow-del .fd-agent { font-weight: 650; }
 .flow-del .fd-st {

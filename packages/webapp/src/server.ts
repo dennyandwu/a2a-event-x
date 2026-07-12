@@ -192,9 +192,9 @@ app.post("/api/events/compensate", async (c) => {
   return jsonStatus(c, status, out);
 });
 
-/** Correlation / workflow list */
+/** Correlation / workflow list (includes historical done/cancelled) */
 app.get("/api/interactions", async (c) => {
-  const limit = Number(c.req.query("limit") || 30);
+  const limit = Number(c.req.query("limit") || 80);
   return c.json(await listCorrelations(repoRoot, limit));
 });
 
