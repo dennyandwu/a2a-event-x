@@ -1,15 +1,160 @@
 {
-  "$schema": "a2a-topic-registry-v1",
-  "updated_at": "2026-07-07",
+  "$schema": "a2a-topic-registry-v2-generated",
+  "_generated_from": "a2a-registry.json",
+  "_source_sha256": "65a6671343d470ebfba4630ee72df4f484f6238a9c6eb6bed71dabeaefe679a0",
+  "updated_at": "2026-07-12",
   "purpose": "topic 注册表:声明周期类 topic 的 collapse_key 模板(v2 折叠语义,方案 4.4)。折叠仅作用于 pending 且未被 claim 的旧事件;enforcement 在 P2 切读后启用,当前为声明。",
-  "default": { "collapsible": false },
+  "default": {
+    "collapsible": false
+  },
   "topics": [
+    {
+      "pattern": "ops-auto-signal-cron",
+      "class": "periodic",
+      "collapsible": true,
+      "collapse_key": "topic",
+      "auto_resolve": {
+        "enabled": true,
+        "consumer": "ansen",
+        "allowed_sources": [
+          "cron",
+          "pipeline-executor",
+          "automation-runner"
+        ]
+      }
+    },
+    {
+      "pattern": "ops-auto-signal-pipeline-stall",
+      "class": "periodic",
+      "collapsible": true,
+      "collapse_key": "topic",
+      "auto_resolve": {
+        "enabled": true,
+        "consumer": "ansen",
+        "allowed_sources": [
+          "cron",
+          "pipeline-executor",
+          "automation-runner"
+        ]
+      }
+    },
+    {
+      "pattern": "ops-auto-alert-cron-perf",
+      "class": "periodic",
+      "collapsible": true,
+      "collapse_key": "alert_type + target",
+      "auto_resolve": {
+        "enabled": true,
+        "consumer": "ansen",
+        "allowed_sources": [
+          "cron",
+          "pipeline-executor",
+          "automation-runner"
+        ]
+      }
+    },
+    {
+      "pattern": "ops-auto-alert-discord-health",
+      "class": "periodic",
+      "collapsible": true,
+      "collapse_key": "alert_type + target",
+      "auto_resolve": {
+        "enabled": true,
+        "consumer": "ansen",
+        "allowed_sources": [
+          "cron",
+          "pipeline-executor",
+          "automation-runner"
+        ]
+      }
+    },
+    {
+      "pattern": "ops-auto-alert-session-health",
+      "class": "periodic",
+      "collapsible": true,
+      "collapse_key": "alert_type + target",
+      "auto_resolve": {
+        "enabled": true,
+        "consumer": "ansen",
+        "allowed_sources": [
+          "cron",
+          "pipeline-executor",
+          "automation-runner"
+        ]
+      }
+    },
+    {
+      "pattern": "ops-auto-alert-a2a-protocol-guard",
+      "class": "periodic",
+      "collapsible": true,
+      "collapse_key": "alert_type + target",
+      "auto_resolve": {
+        "enabled": true,
+        "consumer": "ansen",
+        "allowed_sources": [
+          "cron",
+          "pipeline-executor",
+          "automation-runner"
+        ]
+      }
+    },
+    {
+      "pattern": "ops-auto-alert-cron-health",
+      "class": "periodic",
+      "collapsible": true,
+      "collapse_key": "alert_type + target",
+      "auto_resolve": {
+        "enabled": true,
+        "consumer": "ansen",
+        "allowed_sources": [
+          "cron",
+          "pipeline-executor",
+          "automation-runner"
+        ]
+      }
+    },
+    {
+      "pattern": "ops-auto-alert-cron-model-consistency",
+      "class": "periodic",
+      "collapsible": true,
+      "collapse_key": "alert_type + target",
+      "auto_resolve": {
+        "enabled": true,
+        "consumer": "ansen",
+        "allowed_sources": [
+          "cron",
+          "pipeline-executor",
+          "automation-runner"
+        ]
+      }
+    },
+    {
+      "pattern": "ops-auto-alert-launchd",
+      "class": "periodic",
+      "collapsible": true,
+      "collapse_key": "alert_type + target",
+      "auto_resolve": {
+        "enabled": true,
+        "consumer": "ansen",
+        "allowed_sources": [
+          "cron",
+          "pipeline-executor",
+          "automation-runner"
+        ]
+      }
+    },
     {
       "pattern": "sop-email-check",
       "class": "periodic",
       "collapsible": true,
       "collapse_key": "source + mailbox + message_id",
       "note": "默认按 message_id;仅显式声明为线程摘要的任务才用 thread_id(防止线程内不同新邮件被误合并)"
+    },
+    {
+      "pattern": "ops-escalation-closure-stall",
+      "class": "escalation",
+      "collapsible": false,
+      "note": "ops-closure 自监控升级;必须由人工或具名修复证据闭环,禁止 routine auto_resolve"
     },
     {
       "pattern": "ops-auto-alert-*",

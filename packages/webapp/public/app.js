@@ -1576,22 +1576,97 @@ async function eventOp(op) {
 
 // ── Paths / Health ────────────────────────────────────────
 
+function dataToast(msg, kind) {
+  const el = $("#data-op-toast");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.classList.remove("err", "ok");
+  if (kind) el.classList.add(kind);
+}
+
 async function loadPaths() {
   const data = await api("/api/events/status");
   const ex = data.exists || {};
   const paths = data.paths || {};
   const sql = data.sqlite || {};
+  const nJsonl = data.jsonl_count ?? 0;
+  const nEv = sql.events || 0;
+  const isLive = nJsonl > 0 || nEv > 100;
+  const banner = $("#data-mode-banner");
+  if (banner) {
+    banner.className = "banner " + (isLive ? "ok-ish" : "muted");
+    banner.textContent = isLive
+      ? `数据源：生产/实库 · JSONL ${nJsonl} · sqlite events ${nEv} · deliveries ${sql.deliveries ?? 0} · pending ${sql.by_status?.pending ?? "?"} · dead ${sql.by_status?.dead ?? "?"}`
+      : `数据源：空或仅 demo · JSONL ${nJsonl} · sqlite events ${nEv}。可「从 Mac Mini 同步真数据」或加载演示数据。`;
+  }
   $("#paths-cards").innerHTML = [
     card("A2A_LOG_HOME", paths.A2A_LOG_HOME, ex.home),
-    card("events/*.jsonl", `${data.jsonl_count ?? 0} files`, ex.events_dir),
+    card("events/*.jsonl", `${nJsonl} files`, ex.events_dir && nJsonl > 0),
     card(
       "a2a-v2.sqlite",
       sql.ok ? `${sql.events} events · ${sql.deliveries} deliveries` : "missing",
-      ex.db,
+      ex.db && sql.ok,
     ),
     card("a2a-log.py", paths.A2A_LOG_CLI, ex.v1_script),
   ].join("");
   $("#paths-out").textContent = JSON.stringify(data, null, 2);
+}
+
+async function syncProdData() {
+  if (
+    !confirm(
+      "将通过 rsync 从 A2AX_SYNC_REMOTE（默认 macmini-ts 生产 a2a-log）拉到本机 A2A_LOG_HOME。\n可能覆盖本地 demo。继续？",
+    )
+  ) {
+    return;
+  }
+  dataToast("同步中（可能需 1–2 分钟）…");
+  setLoading(true);
+  try {
+    const out = await api("/api/data/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    dataToast(
+      out.ok
+        ? `同步完成 · JSONL ${out.after?.jsonlCount ?? "?"} · mode ${out.after?.dataMode || ""}`
+        : `同步失败 · ${out.stderr || out.error || "error"}`,
+      out.ok ? "ok" : "err",
+    );
+    await loadPaths();
+    if (out.ok) await loadBoard().catch(() => {});
+  } catch (e) {
+    dataToast(String(e.message || e), "err");
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function backfillData() {
+  if (
+    !confirm(
+      "运行 a2a-v2-backfill：把 events/*.jsonl 导入 sqlite。大库可能较慢。继续？",
+    )
+  ) {
+    return;
+  }
+  dataToast("backfill 运行中…");
+  setLoading(true);
+  try {
+    const out = await api("/api/data/backfill", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    dataToast(out.ok ? "backfill 完成" : `backfill 失败 · ${(out.stderr || "").slice(0, 200)}`, out.ok ? "ok" : "err");
+    await loadPaths();
+    if (out.ok) await loadBoard().catch(() => {});
+  } catch (e) {
+    dataToast(String(e.message || e), "err");
+  } finally {
+    setLoading(false);
+  }
 }
 
 function card(title, val, ok) {
@@ -1641,6 +1716,9 @@ $("#agent-open-inbox").addEventListener("click", () => {
 $("#auto-refresh").addEventListener("change", setupAutoRefresh);
 $("#auto-refresh-sec").addEventListener("change", setupAutoRefresh);
 $("#refresh-system")?.addEventListener("click", () => refreshSystem());
+$("#btn-data-sync")?.addEventListener("click", () => syncProdData());
+$("#btn-data-backfill")?.addEventListener("click", () => backfillData());
+$("#btn-data-refresh")?.addEventListener("click", () => loadPaths());
 $$("#system-subnav .nav-sub-item").forEach((b) => {
   b.addEventListener("click", (e) => {
     e.stopPropagation();

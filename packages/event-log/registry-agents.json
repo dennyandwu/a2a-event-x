@@ -1,18 +1,307 @@
 {
-  "$schema": "a2a-agent-registry-v2",
-  "updated_at": "2026-07-07",
-  "purpose": "v2 agent 注册表(方案 4.6)。consumers.json(v1,组件视角)继续有效;本表是 agent 视角:接入方式/拉取周期/SLA/ACL。token 字段留空至 Bridge v2 上线(P3),SSH 路径沿用密钥。",
+  "$schema": "a2a-agent-registry-v3-generated",
+  "_generated_from": "a2a-registry.json",
+  "_source_sha256": "65a6671343d470ebfba4630ee72df4f484f6238a9c6eb6bed71dabeaefe679a0",
+  "updated_at": "2026-07-12",
+  "purpose": "Generated agent, ACL, and routing-group runtime projection.",
   "agents": [
-    { "agent_id": "issac",    "host": "macmini", "access": "cli-local+hook-c", "owner": "openclaw-main", "pull_interval_s": 0,    "sla": "秒级(Hook-C)+watchdog 兜底", "acl_write_to": ["*"], "notes": "OpenClaw main agent" },
-    { "agent_id": "ansen",    "host": "macmini", "access": "cli-local+hook-c", "owner": "ansen-ops",     "pull_interval_s": 300,  "sla": "5min(ops-closure-worker)", "acl_write_to": ["*"] },
-    { "agent_id": "satoshi2", "host": "sv-vps",  "access": "ssh-cli",          "owner": "claude-code",   "pull_interval_s": 30,   "sla": "30s(a2a-watcher.sh)", "acl_write_to": ["*"] },
-    { "agent_id": "elon2",    "host": "sv-vps",  "access": "ssh-cli",          "owner": "claude-code",   "pull_interval_s": 30,   "sla": "30s", "acl_write_to": ["*"] },
-    { "agent_id": "wiki",     "host": "sv-vps",  "access": "ssh-cli",          "owner": "claude-code",   "pull_interval_s": 60,   "sla": "1min", "acl_write_to": ["*"] },
-    { "agent_id": "automation-runner", "host": "macmini", "access": "cli-local", "owner": "openclaw-local", "pull_interval_s": null, "sla": "producer-only", "acl_write_to": ["issac", "ansen"] },
-    { "agent_id": "cron",     "host": "macmini", "access": "cli-local",        "owner": "openclaw-local", "pull_interval_s": null, "sla": "producer-only(不消费 dispatch,遗留 138 条 stale 待判废)", "acl_write_to": ["*"] },
-    { "agent_id": "cowork",   "host": "external","access": "ssh-cli(v2 lease)", "owner": "claude-cowork", "pull_interval_s": 3600, "sla": "小时级(scheduled task),P3 首个异构试点", "acl_write_to": ["issac", "ansen", "satoshi2"], "pilot": true },
-    { "agent_id": "test",       "reserved": "合约测试专用 producer" },
-    { "agent_id": "test-agent", "reserved": "合约测试专用 consumer" }
+    {
+      "agent_id": "issac",
+      "can_consume": true,
+      "host": "macmini",
+      "access": "cli-local+hook-c",
+      "owner": "openclaw-main",
+      "pull_interval_s": 0,
+      "sla": "秒级(Hook-C)+watchdog 兜底",
+      "acl_write_to": [
+        "*"
+      ],
+      "notes": "OpenClaw main agent"
+    },
+    {
+      "agent_id": "ansen",
+      "can_consume": true,
+      "host": "macmini",
+      "access": "cli-local+hook-c",
+      "owner": "ansen-ops",
+      "pull_interval_s": 300,
+      "sla": "5min(ops-closure-worker)",
+      "acl_write_to": [
+        "*"
+      ]
+    },
+    {
+      "agent_id": "satoshi2",
+      "can_consume": true,
+      "host": "sv-vps",
+      "access": "ssh-cli",
+      "owner": "claude-code",
+      "pull_interval_s": 30,
+      "sla": "30s(a2a-watcher.sh)",
+      "acl_write_to": [
+        "*"
+      ],
+      "bridge_tokens": [
+        {
+          "slot": "active",
+          "token_id": "satoshi2-active-20260711",
+          "sha256": "6c8173aef9f56d78d92015279100c071d6b951e842c58a4f4444b505af932e24"
+        },
+        {
+          "slot": "next",
+          "token_id": "satoshi2-next-20260711",
+          "sha256": "1a5dc78ef5012b84f72978b2d793c3c0a671f4e24de814320eb7db1127175cd2"
+        }
+      ]
+    },
+    {
+      "agent_id": "elon2",
+      "can_consume": true,
+      "host": "sv-vps",
+      "access": "ssh-cli",
+      "owner": "claude-code",
+      "pull_interval_s": 30,
+      "sla": "30s",
+      "acl_write_to": [
+        "*"
+      ],
+      "bridge_tokens": [
+        {
+          "slot": "active",
+          "token_id": "elon2-active-20260711",
+          "sha256": "ceb55f4319d886c1a18aa30169d3580ba9ec728435f418eeee4919379a4d18ab"
+        },
+        {
+          "slot": "next",
+          "token_id": "elon2-next-20260711",
+          "sha256": "c6b010cdce3b7f9367bde7227d361c1d70cdb20544d8a30e896dbc96e1cbec8f"
+        }
+      ]
+    },
+    {
+      "agent_id": "wiki",
+      "can_consume": true,
+      "host": "sv-vps",
+      "access": "ssh-cli",
+      "owner": "claude-code",
+      "pull_interval_s": 60,
+      "sla": "1min",
+      "acl_write_to": [
+        "*"
+      ],
+      "bridge_tokens": [
+        {
+          "slot": "active",
+          "token_id": "wiki-active-20260711",
+          "sha256": "a65e1207a85aec676d24df1bfe491ea5db0d60edfa3e01095b5bfad618503d10"
+        },
+        {
+          "slot": "next",
+          "token_id": "wiki-next-20260711",
+          "sha256": "2178861118527d92594b22078479352d44d3676ec80aa96bcfaca554533eeefb"
+        }
+      ]
+    },
+    {
+      "agent_id": "automation-runner",
+      "can_consume": false,
+      "host": "macmini",
+      "access": "cli-local",
+      "owner": "openclaw-local",
+      "pull_interval_s": null,
+      "sla": "producer-only",
+      "acl_write_to": [
+        "issac",
+        "ansen"
+      ]
+    },
+    {
+      "agent_id": "cron",
+      "can_consume": false,
+      "host": "macmini",
+      "access": "cli-local",
+      "owner": "openclaw-local",
+      "pull_interval_s": null,
+      "sla": "producer-only(不消费 dispatch,遗留 138 条 stale 待判废)",
+      "acl_write_to": [
+        "*"
+      ]
+    },
+    {
+      "agent_id": "cowork",
+      "can_consume": true,
+      "host": "external",
+      "access": "ssh-cli(v2 lease)",
+      "owner": "claude-cowork",
+      "pull_interval_s": 3600,
+      "sla": "小时级(scheduled task),P3 首个异构试点",
+      "acl_write_to": [
+        "issac",
+        "ansen",
+        "satoshi2"
+      ],
+      "pilot": true,
+      "bridge_tokens": [
+        {
+          "slot": "active",
+          "token_id": "cowork-active-20260711",
+          "sha256": "924cfd6357e3a3deb0d2f30377ece94e64bf2051fd45669c8283bf2ea719f8dd"
+        },
+        {
+          "slot": "next",
+          "token_id": "cowork-next-20260711",
+          "sha256": "0738d97f965ab93d157a2c3e0969b87bad18c86c7f5b4d78567c019c7477c339"
+        }
+      ]
+    },
+    {
+      "agent_id": "satoshi",
+      "can_consume": false,
+      "status": "retired",
+      "access": "none",
+      "owner": "retired",
+      "pull_interval_s": null,
+      "sla": "retired",
+      "notes": "Historical migration policy only"
+    },
+    {
+      "agent_id": "elon",
+      "can_consume": false,
+      "status": "retired",
+      "access": "none",
+      "owner": "retired",
+      "pull_interval_s": null,
+      "sla": "retired",
+      "notes": "Historical migration policy only"
+    },
+    {
+      "agent_id": "elon-musk-ii-retired",
+      "aliases": [
+        "Elon Musk II"
+      ],
+      "can_consume": false,
+      "status": "retired",
+      "access": "none",
+      "owner": "retired",
+      "pull_interval_s": null,
+      "sla": "retired",
+      "notes": "Historical migration policy only"
+    },
+    {
+      "agent_id": "collect",
+      "can_consume": false,
+      "status": "retired",
+      "access": "none",
+      "owner": "retired",
+      "pull_interval_s": null,
+      "sla": "retired",
+      "notes": "Historical migration policy only"
+    },
+    {
+      "agent_id": "test",
+      "can_consume": false,
+      "reserved": "合约测试专用 producer"
+    },
+    {
+      "agent_id": "test-agent",
+      "can_consume": true,
+      "reserved": "合约测试专用 consumer"
+    },
+    {
+      "agent_id": "pipeline-executor",
+      "can_consume": false,
+      "host": "macmini",
+      "access": "cli-local",
+      "owner": "openclaw-local",
+      "pull_interval_s": null,
+      "sla": "producer-only",
+      "acl_write_to": [
+        "*"
+      ]
+    },
+    {
+      "agent_id": "followup-runner",
+      "can_consume": false,
+      "host": "macmini",
+      "access": "cli-local",
+      "owner": "openclaw-local",
+      "pull_interval_s": null,
+      "sla": "producer-only",
+      "acl_write_to": [
+        "*"
+      ]
+    },
+    {
+      "agent_id": "hooks",
+      "can_consume": false,
+      "host": "macmini",
+      "access": "hook-local",
+      "owner": "openclaw-local",
+      "pull_interval_s": null,
+      "sla": "control-plane producer",
+      "acl_write_to": [
+        "*"
+      ]
+    },
+    {
+      "agent_id": "clean",
+      "can_consume": false,
+      "host": "macmini",
+      "access": "cli-local",
+      "owner": "openclaw-local",
+      "pull_interval_s": null,
+      "sla": "control-plane identity",
+      "acl_write_to": [
+        "*"
+      ]
+    },
+    {
+      "agent_id": "codex",
+      "can_consume": true,
+      "host": "macmini",
+      "access": "file-watch",
+      "owner": "codex-app",
+      "pull_interval_s": 60,
+      "sla": "60s WatchPaths + StartInterval",
+      "acl_write_to": [
+        "issac",
+        "ansen",
+        "satoshi2",
+        "elon2",
+        "wiki"
+      ]
+    }
   ],
-  "retired": ["satoshi", "elon", "Elon Musk II", "collect"]
+  "retired": [
+    "satoshi",
+    "elon",
+    "Elon Musk II",
+    "collect"
+  ],
+  "routing_groups": {
+    "pseudo_agents": [
+      "automation-runner",
+      "clean",
+      "cron",
+      "followup-runner",
+      "hooks",
+      "pipeline-executor"
+    ],
+    "claude_code_agents": [
+      "elon2",
+      "satoshi2"
+    ],
+    "file_watch_agents": [
+      "codex"
+    ],
+    "agents_deny_openclaw_cron": [
+      "ansen",
+      "clean",
+      "elon",
+      "hooks",
+      "main",
+      "nanni",
+      "satoshi"
+    ]
+  }
 }

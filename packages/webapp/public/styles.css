@@ -142,6 +142,12 @@ nav { display: flex; flex-direction: column; gap: 4px; }
   margin: 0 8px 6px; padding: 8px 10px; border-radius: 10px;
   border: 1px solid var(--border); background: var(--panel); font-size: 12px;
 }
+.banner.ok-ish {
+  border-color: rgba(107, 203, 119, 0.45);
+  background: rgba(107, 203, 119, 0.08);
+  color: var(--text);
+}
+.data-source-bar { margin-top: 4px; }
 .cards {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 10px; padding: 0 16px 12px;

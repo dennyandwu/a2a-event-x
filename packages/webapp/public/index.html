@@ -33,7 +33,7 @@
         </nav>
         <div class="sidebar-foot">
           <span class="pill">B/S</span>
-          <span class="muted">v0.9 · 交互优先</span>
+          <span class="muted">v1.0 · 交互优先</span>
         </div>
       </aside>
 
@@ -269,8 +269,17 @@
 
           <div id="system-panel-paths" class="system-panel">
             <div class="pane-head">
-              <h2>Write path · 存储拓扑</h2>
-              <span class="muted">数据写在哪 · 为何看板空 · dual-write 是否通</span>
+              <h2>Write path · 数据源</h2>
+              <span class="muted">生产 Event Log 目录 · rsync 同步 · JSONL backfill</span>
+            </div>
+            <div class="data-source-bar">
+              <div id="data-mode-banner" class="banner muted">检测数据源…</div>
+              <div class="empty-actions" style="padding:0 16px 12px">
+                <button type="button" class="btn" id="btn-data-sync" title="rsync from A2AX_SYNC_REMOTE (default macmini-ts)">从 Mac Mini 同步真数据</button>
+                <button type="button" class="btn ghost" id="btn-data-backfill" title="a2a-v2-backfill.py">JSONL → sqlite backfill</button>
+                <button type="button" class="btn ghost" id="btn-data-refresh">刷新状态</button>
+              </div>
+              <div id="data-op-toast" class="toast muted" style="padding:0 16px 8px"></div>
             </div>
             <div id="paths-cards" class="cards"></div>
             <pre id="paths-out" class="codeblock">加载中…</pre>

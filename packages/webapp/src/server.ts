@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { SessionHub } from "@a2a-event-x/session-hub";
 import {
   agentsBoard,
+  backfillV2FromJsonl,
   batchDone,
   compensateAgent,
   correlationTimeline,
@@ -27,6 +28,7 @@ import {
   runEventV1,
   runEventV2,
   seedDemoData,
+  syncEventLogFromRemote,
 } from "./event-log.js";
 import { readRecentOps, recordOp } from "./ops-audit.js";
 
@@ -48,8 +50,25 @@ if (!process.env.A2A_LOG_HOME) {
 
 const hub = new SessionHub();
 const app = new Hono();
+const VERSION = "1.0.0";
+/** Optional shared secret: set A2AX_TOKEN to require Bearer / X-A2AX-Token on /api/* (health always open). */
+const API_TOKEN = process.env.A2AX_TOKEN || "";
 
 app.use("/api/*", cors({ origin: "*" }));
+
+app.use("/api/*", async (c, next) => {
+  if (!API_TOKEN) return next();
+  const pathName = c.req.path;
+  if (pathName === "/api/health" || pathName === "/api/meta") return next();
+  const hdr =
+    c.req.header("x-a2ax-token") ||
+    c.req.header("authorization")?.replace(/^Bearer\s+/i, "") ||
+    "";
+  if (hdr !== API_TOKEN) {
+    return c.json({ error: "unauthorized", hint: "set X-A2AX-Token or Authorization: Bearer" }, 401);
+  }
+  return next();
+});
 
 function jsonStatus(c: { json: (b: unknown, s?: number) => Response }, status: number, body: unknown) {
   return c.json(body, status as 200);
@@ -58,11 +77,15 @@ function jsonStatus(c: { json: (b: unknown, s?: number) => Response }, status: n
 app.get("/api/health", async (c) => {
   const h = await hub.health();
   const status = await eventLogStatus(repoRoot);
+  const p = eventLogPaths(repoRoot);
   return c.json({
     product: "a2a-event-x",
     product_focus: "multi-agent-interaction",
     surface: "bs",
-    version: "0.9.0",
+    version: VERSION,
+    landable: true,
+    auth: API_TOKEN ? "token" : "open-localhost",
+    dataMode: p.dataMode,
     ...h,
     eventLog: status,
     opsAudit: readRecentOps(5),
@@ -82,6 +105,38 @@ app.post("/api/demo/seed", async (c) => {
   });
   recordOp({
     op: "demo_seed",
+    ok: status === 200,
+    detail: out as Record<string, unknown>,
+    duration_ms: Date.now() - t0,
+  });
+  return jsonStatus(c, status, out);
+});
+
+/**
+ * Pull production Event Log via rsync (A2AX_SYNC_REMOTE, default macmini-ts:…/a2a-log/).
+ * Requires network + SSH. Does not auto-mutate remote.
+ */
+app.post("/api/data/sync", async (c) => {
+  const t0 = Date.now();
+  const { status, body: out } = await syncEventLogFromRemote(repoRoot);
+  recordOp({
+    op: "data_sync",
+    ok: status === 200,
+    detail: out as Record<string, unknown>,
+    duration_ms: Date.now() - t0,
+  });
+  return jsonStatus(c, status, out);
+});
+
+/**
+ * Ingest events/*.jsonl into a2a-v2.sqlite (a2a-v2-backfill.py).
+ * Use when JSONL exists but board is empty / sqlite stale.
+ */
+app.post("/api/data/backfill", async (c) => {
+  const t0 = Date.now();
+  const { status, body: out } = await backfillV2FromJsonl(repoRoot);
+  recordOp({
+    op: "data_backfill",
     ok: status === 200,
     detail: out as Record<string, unknown>,
     duration_ms: Date.now() - t0,
@@ -439,13 +494,22 @@ app.get("/api/meta", (c) =>
     primarySurface: "browser",
     defaultView: "agents",
     secondaryModules: ["inbox", "sessions", "write-path", "ops-audit"],
-    version: "0.9.0",
+    version: VERSION,
     mcp: "deferred",
+    landable: true,
+    auth: API_TOKEN ? "token" : "open-localhost",
+    data: {
+      home: paths.home,
+      dataMode: paths.dataMode,
+      jsonlCount: paths.jsonlCount,
+      syncRemote: process.env.A2AX_SYNC_REMOTE || "macmini-ts:~/.openclaw/workspace/state/a2a-log/",
+    },
     providers: hub.providers(),
     docs: {
       toolkit: "https://github.com/dennyandwu/a2a-toolkit",
       eventX: "https://github.com/dennyandwu/a2a-event-x",
       reorient: "docs/PRODUCT-REORIENT.md",
+      goLive: "docs/GO-LIVE.md",
     },
   }),
 );

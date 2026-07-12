@@ -41,14 +41,32 @@ export function eventLogPaths(repoRoot: string) {
   const v2 = path.join(repoRoot, "packages/event-log/a2a-v2.py");
   const v1 = path.join(repoRoot, "packages/event-log/scripts/a2a-log.py");
   const store = path.join(repoRoot, "packages/event-log/a2a_v2_store.py");
-  const registry = path.join(repoRoot, "packages/event-log/registry-agents.json");
-  const topics = path.join(repoRoot, "packages/event-log/topics.json");
   const home = expandHome(
     process.env.A2A_LOG_HOME || "~/.openclaw/workspace/state/a2a-log",
   );
   const db = expandHome(
     process.env.A2A_V2_DB || path.join(home, "db", "a2a-v2.sqlite"),
   );
+  // Prefer live home registry/topics; fall back to monorepo copies
+  const homeRegistry = path.join(home, "registry-agents.json");
+  const homeTopics = path.join(home, "topics.json");
+  const registry = fs.existsSync(homeRegistry)
+    ? homeRegistry
+    : path.join(repoRoot, "packages/event-log/registry-agents.json");
+  const topics = fs.existsSync(homeTopics)
+    ? homeTopics
+    : path.join(repoRoot, "packages/event-log/topics.json");
+  const eventsDir = path.join(home, "events");
+  let jsonlCount = 0;
+  if (fs.existsSync(eventsDir)) {
+    try {
+      jsonlCount = fs
+        .readdirSync(eventsDir)
+        .filter((f) => f.endsWith(".jsonl")).length;
+    } catch {
+      jsonlCount = 0;
+    }
+  }
   return {
     v1,
     v2,
@@ -57,14 +75,152 @@ export function eventLogPaths(repoRoot: string) {
     topics,
     home,
     db,
-    eventsDir: path.join(home, "events"),
+    eventsDir,
     auditDir: path.join(home, "audit"),
+    backfill: path.join(repoRoot, "packages/event-log/a2a-v2-backfill.py"),
+    verify: path.join(repoRoot, "packages/event-log/a2a-v2-verify.py"),
     v1Exists: fs.existsSync(v1),
     v2Exists: fs.existsSync(v2),
     homeExists: fs.existsSync(home),
     dbExists: fs.existsSync(db),
-    eventsDirExists: fs.existsSync(path.join(home, "events")),
+    eventsDirExists: fs.existsSync(eventsDir),
+    jsonlCount,
+    dataMode: jsonlCount > 0 || (fs.existsSync(db) && fileSize(db) > 500_000)
+      ? ("live" as const)
+      : ("empty_or_demo" as const),
   };
+}
+
+function fileSize(p: string): number {
+  try {
+    return fs.statSync(p).size;
+  } catch {
+    return 0;
+  }
+}
+
+/** rsync Event Log from remote host (default macmini-ts production path). */
+export async function syncEventLogFromRemote(
+  repoRoot: string,
+): Promise<{ status: number; body: unknown }> {
+  const p = eventLogPaths(repoRoot);
+  const remote =
+    process.env.A2AX_SYNC_REMOTE ||
+    "macmini-ts:~/.openclaw/workspace/state/a2a-log/";
+  const dest = p.home.endsWith("/") ? p.home : `${p.home}/`;
+  fs.mkdirSync(p.home, { recursive: true });
+  const args = [
+    "-az",
+    "--exclude",
+    "*.jsonl.lock",
+    "--exclude",
+    "deploy.lock",
+    "--exclude",
+    "mailbox-shadow",
+    "--exclude",
+    "bridge-security.sqlite",
+    remote,
+    dest,
+  ];
+  const r = await runCmd("rsync", args, process.env, 600_000);
+  const after = eventLogPaths(repoRoot);
+  return {
+    status: r.ok ? 200 : 500,
+    body: {
+      ok: r.ok,
+      remote,
+      dest: p.home,
+      code: r.code,
+      stderr: (r.stderr || "").slice(-2000),
+      stdout: (r.stdout || "").slice(-500),
+      after: {
+        jsonlCount: after.jsonlCount,
+        dbExists: after.dbExists,
+        dataMode: after.dataMode,
+        db_size: fileSize(after.db),
+      },
+    },
+  };
+}
+
+/** Run a2a-v2-backfill.py to ingest JSONL → sqlite deliveries. */
+export async function backfillV2FromJsonl(
+  repoRoot: string,
+): Promise<{ status: number; body: unknown }> {
+  const p = eventLogPaths(repoRoot);
+  if (!fs.existsSync(p.backfill)) {
+    return { status: 503, body: { error: "backfill_script_missing", path: p.backfill } };
+  }
+  if (!p.eventsDirExists) {
+    return { status: 400, body: { error: "events_dir_missing", path: p.eventsDir } };
+  }
+  const r = await runPython(p.backfill, [], {
+    ...process.env,
+    A2A_LOG_HOME: process.env.A2A_LOG_HOME || p.home,
+    A2A_V2_DB: process.env.A2A_V2_DB || p.db,
+  }, 600_000);
+  return {
+    status: r.ok ? 200 : 500,
+    body: {
+      ok: r.ok,
+      code: r.code,
+      stdout: (r.stdout || "").slice(-3000),
+      stderr: (r.stderr || "").slice(-2000),
+      home: p.home,
+      db: p.db,
+    },
+  };
+}
+
+function runCmd(
+  cmd: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+  timeoutMs = 120_000,
+): Promise<{ ok: boolean; code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, { env: { ...env } });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const timer =
+      timeoutMs > 0
+        ? setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            try {
+              child.kill("SIGKILL");
+            } catch {
+              /* ignore */
+            }
+            resolve({
+              ok: false,
+              code: 124,
+              stdout,
+              stderr: (stderr || "") + `\n[timeout after ${timeoutMs}ms]`,
+            });
+          }, timeoutMs)
+        : null;
+    child.stdout.on("data", (d) => (stdout += d.toString()));
+    child.stderr.on("data", (d) => (stderr += d.toString()));
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve({ ok: code === 0, code: code ?? 1, stdout, stderr });
+    });
+    child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve({
+        ok: false,
+        code: 1,
+        stdout,
+        stderr: String(err.message || err),
+      });
+    });
+  });
 }
 
 export function runPython(
@@ -382,7 +538,11 @@ export async function inboxAuto(
 export function loadRegistryAgents(repoRoot: string): unknown {
   const p = eventLogPaths(repoRoot);
   if (!fs.existsSync(p.registry)) return { agents: [] };
-  return JSON.parse(fs.readFileSync(p.registry, "utf8"));
+  try {
+    return JSON.parse(fs.readFileSync(p.registry, "utf8"));
+  } catch {
+    return { agents: [], error: "registry_parse_failed", path: p.registry };
+  }
 }
 
 export type RegistryAgent = {

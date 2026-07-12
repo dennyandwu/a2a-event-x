@@ -17,7 +17,9 @@ export type AuditOp =
   | "compensate"
   | "v1_ack"
   | "v1_done"
-  | "demo_seed";
+  | "demo_seed"
+  | "data_sync"
+  | "data_backfill";
 
 export interface AuditEntry {
   ts: string;
