@@ -51,25 +51,57 @@ function fmtTime(d = new Date()) {
   return d.toLocaleTimeString();
 }
 
+/** @type {"paths"|"audit"|"health"} */
+let systemTab = "paths";
+
+const SYSTEM_TAB_LABELS = {
+  paths: "Write Path · 存储拓扑",
+  audit: "Ops Audit · 操作审计",
+  health: "Health · 健康检查",
+};
+
+function setSystemTab(tab) {
+  if (!["paths", "audit", "health"].includes(tab)) tab = "paths";
+  systemTab = tab;
+  $$("#system-subnav .nav-sub-item").forEach((b) =>
+    b.classList.toggle("active", b.dataset.systemTab === tab),
+  );
+  $$("#system-tabs .stab").forEach((b) =>
+    b.classList.toggle("active", b.dataset.systemTab === tab),
+  );
+  $("#system-panel-paths")?.classList.toggle("hidden", tab !== "paths");
+  $("#system-panel-audit")?.classList.toggle("hidden", tab !== "audit");
+  $("#system-panel-health")?.classList.toggle("hidden", tab !== "health");
+  if ($("#system-tab-label")) {
+    $("#system-tab-label").textContent = `运维 · ${SYSTEM_TAB_LABELS[tab] || tab}`;
+  }
+  if (tab === "paths") loadPaths();
+  if (tab === "audit") loadAudit();
+  if (tab === "health") loadHealth();
+}
+
+function refreshSystem() {
+  if (systemTab === "paths") return loadPaths();
+  if (systemTab === "audit") return loadAudit();
+  return loadHealth();
+}
+
 function setView(name) {
   $$(".nav").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
   $("#view-agents").classList.toggle("hidden", name !== "agents");
   $("#view-workflows").classList.toggle("hidden", name !== "workflows");
   $("#view-events").classList.toggle("hidden", name !== "events");
   $("#view-sessions").classList.toggle("hidden", name !== "sessions");
-  $("#view-paths").classList.toggle("hidden", name !== "paths");
-  $("#view-audit").classList.toggle("hidden", name !== "audit");
-  $("#view-health").classList.toggle("hidden", name !== "health");
+  $("#view-system")?.classList.toggle("hidden", name !== "system");
+  $("#system-subnav")?.classList.toggle("hidden", name !== "system");
   $("#agent-filters").classList.toggle("hidden", name !== "agents");
   $("#workflow-filters").classList.toggle("hidden", name !== "workflows");
   $("#event-filters").classList.toggle("hidden", name !== "events");
   $("#session-filters").classList.toggle("hidden", name !== "sessions");
-  $("#path-filters").classList.toggle("hidden", name !== "paths");
+  $("#system-filters")?.classList.toggle("hidden", name !== "system");
   if (name === "agents") loadBoard();
   if (name === "workflows") loadWorkflows();
-  if (name === "health") loadHealth();
-  if (name === "paths") loadPaths();
-  if (name === "audit") loadAudit();
+  if (name === "system") setSystemTab(systemTab);
   if (name === "events") ensureAgentsLoaded();
   if (name === "sessions" && !sessions.length) loadSessions().catch(() => {});
 }
@@ -1076,7 +1108,17 @@ $("#agent-open-inbox").addEventListener("click", () => {
 });
 $("#auto-refresh").addEventListener("change", setupAutoRefresh);
 $("#auto-refresh-sec").addEventListener("change", setupAutoRefresh);
-$("#refresh-audit").addEventListener("click", loadAudit);
+$("#refresh-system")?.addEventListener("click", () => refreshSystem());
+$$("#system-subnav .nav-sub-item").forEach((b) => {
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    systemTab = b.dataset.systemTab || "paths";
+    setView("system");
+  });
+});
+$$("#system-tabs .stab").forEach((b) => {
+  b.addEventListener("click", () => setSystemTab(b.dataset.systemTab));
+});
 $("#agent-filter").addEventListener("input", () => renderBoard());
 $("#agent-sort").addEventListener("change", () => renderBoard());
 
@@ -1120,7 +1162,7 @@ $("#op-ack").addEventListener("click", () => eventOp("ack"));
 $("#op-done").addEventListener("click", () => eventOp("done"));
 $("#op-renew").addEventListener("click", () => eventOp("renew"));
 $("#op-cancel").addEventListener("click", () => eventOp("cancel"));
-$("#refresh-paths").addEventListener("click", loadPaths);
+
 $("#copy-resume").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText($("#resume-cmd").textContent);

@@ -7,8 +7,9 @@
 | 优先级 | 模块 | 角色 |
 |--------|------|------|
 | **主线** | Event Log + **Agent 看板** | pending / claimed / acked / 操作闭环 |
-| 主线 | Inbox | 单 agent claim / ack / done |
-| 附属 | Sessions | coding CLI 历史上下文 |
+| 主线 | Workflows · Inbox | correlation 时间线；单 agent claim / ack / done |
+| 上下文 | Sessions | coding CLI 历史（侧栏二级） |
+| 运维 | **系统**（Write Path / Ops Audit / Health） | 存储拓扑 · 操作审计 · 健康检查（非日常调度） |
 | 后置 | MCP | 产品完成后再做 |
 
 名称固定：**A2A Event X**。

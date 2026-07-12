@@ -17,13 +17,19 @@
           </div>
         </div>
         <nav>
+          <div class="nav-section-label">主线</div>
           <button class="nav active" data-view="agents">Agents</button>
           <button class="nav" data-view="workflows">Workflows</button>
           <button class="nav" data-view="events">Inbox</button>
-          <button class="nav" data-view="sessions">Sessions</button>
-          <button class="nav" data-view="paths">Write Path</button>
-          <button class="nav" data-view="audit">Ops Audit</button>
-          <button class="nav" data-view="health">Health</button>
+          <div class="nav-section-label">上下文</div>
+          <button class="nav nav-secondary" data-view="sessions">Sessions</button>
+          <div class="nav-section-label">运维</div>
+          <button class="nav nav-secondary" data-view="system" id="nav-system">系统</button>
+          <div id="system-subnav" class="nav-sub hidden" aria-label="系统子菜单">
+            <button type="button" class="nav-sub-item active" data-system-tab="paths">Write Path</button>
+            <button type="button" class="nav-sub-item" data-system-tab="audit">Ops Audit</button>
+            <button type="button" class="nav-sub-item" data-system-tab="health">Health</button>
+          </div>
         </nav>
         <div class="sidebar-foot">
           <span class="pill">B/S</span>
@@ -86,8 +92,9 @@
             <input id="search" type="search" placeholder="跨工具搜索消息…" />
             <button id="refresh" class="btn">刷新</button>
           </div>
-          <div class="filters hidden" id="path-filters">
-            <button id="refresh-paths" class="btn">刷新写路径状态</button>
+          <div class="filters hidden" id="system-filters">
+            <span class="muted" id="system-tab-label">运维 · Write Path</span>
+            <button id="refresh-system" class="btn ghost">刷新</button>
           </div>
           <div class="filters hidden" id="workflow-filters">
             <button id="refresh-workflows" class="btn">刷新 workflows</button>
@@ -220,27 +227,42 @@
           </div>
         </section>
 
-        <section id="view-paths" class="view hidden">
-          <div class="pane-head">
-            <h2>Write path · 存储拓扑</h2>
-            <span class="muted">canonical JSONL + optional v2 sqlite</span>
+        <!-- 系统 / 运维：二级入口，非产品主线 -->
+        <section id="view-system" class="view hidden">
+          <div class="banner muted system-banner">
+            运维诊断（存储拓扑 · 操作审计 · 健康检查）。日常调度请用 Agents / Workflows / Inbox。
           </div>
-          <div id="paths-cards" class="cards"></div>
-          <pre id="paths-out" class="codeblock">加载中…</pre>
-        </section>
-
-        <section id="view-audit" class="view hidden">
-          <div class="pane-head">
-            <h2>Ops Audit</h2>
-            <button id="refresh-audit" class="btn ghost">刷新</button>
+          <div class="system-tabs" id="system-tabs">
+            <button type="button" class="stab active" data-system-tab="paths">Write Path</button>
+            <button type="button" class="stab" data-system-tab="audit">Ops Audit</button>
+            <button type="button" class="stab" data-system-tab="health">Health</button>
           </div>
-          <div id="audit-path" class="muted" style="padding:0 16px 8px"></div>
-          <pre id="audit-out" class="codeblock">加载中…</pre>
-        </section>
 
-        <section id="view-health" class="view hidden">
-          <div class="pane-head"><h2>Health</h2></div>
-          <pre id="health-out" class="codeblock">加载中…</pre>
+          <div id="system-panel-paths" class="system-panel">
+            <div class="pane-head">
+              <h2>Write path · 存储拓扑</h2>
+              <span class="muted">数据写在哪 · 为何看板空 · dual-write 是否通</span>
+            </div>
+            <div id="paths-cards" class="cards"></div>
+            <pre id="paths-out" class="codeblock">加载中…</pre>
+          </div>
+
+          <div id="system-panel-audit" class="system-panel hidden">
+            <div class="pane-head">
+              <h2>Ops Audit</h2>
+              <span class="muted">本控制台的 claim / done / requeue / seed 等变更记录</span>
+            </div>
+            <div id="audit-path" class="muted" style="padding:0 16px 8px"></div>
+            <pre id="audit-out" class="codeblock">加载中…</pre>
+          </div>
+
+          <div id="system-panel-health" class="system-panel hidden">
+            <div class="pane-head">
+              <h2>Health</h2>
+              <span class="muted">服务版本 · adapter · Event Log 就绪状态</span>
+            </div>
+            <pre id="health-out" class="codeblock">加载中…</pre>
+          </div>
         </section>
       </main>
     </div>
