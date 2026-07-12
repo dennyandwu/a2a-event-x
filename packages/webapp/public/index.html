@@ -33,7 +33,7 @@
         </nav>
         <div class="sidebar-foot">
           <span class="pill">B/S</span>
-          <span class="muted">v1.2 · 交互优先</span>
+          <span class="muted">v1.3 · 交互优先</span>
         </div>
       </aside>
 
@@ -45,9 +45,10 @@
             <button id="demo-wipe" class="btn ghost danger" title="仅清除演示/测试行">清除演示</button>
             <input id="agent-filter" type="search" placeholder="筛选 agent…" style="min-width:120px" />
             <select id="agent-sort" title="sort">
-              <option value="active">按活跃度</option>
+              <option value="active">按关注度</option>
               <option value="pending">按 pending</option>
               <option value="dead">按 dead</option>
+              <option value="blocked">按 blocked</option>
               <option value="name">按名称</option>
             </select>
             <label class="chk">
@@ -115,8 +116,9 @@
             <div class="board-pane">
               <div class="pane-head">
                 <h2>Agent 看板</h2>
-                <span class="muted">pending · claimed · acked · dead · 点卡片开详情</span>
+                <span class="muted">pending · claimed · blocked · dead · historical · 点卡片开详情</span>
               </div>
+              <div id="freshness-banner" class="banner muted hidden" style="margin:8px 16px 0"></div>
               <div id="board-error" class="banner hidden"></div>
               <div id="board-toast" class="toast muted"></div>
               <div id="agent-board" class="kanban"></div>
@@ -140,7 +142,11 @@
                 <button class="stab" data-st="pending">pending</button>
                 <button class="stab" data-st="claimed">claimed</button>
                 <button class="stab" data-st="acked">acked</button>
+                <button class="stab" data-st="blocked">blocked</button>
+                <button class="stab" data-st="escalated">escalated</button>
                 <button class="stab" data-st="dead">dead</button>
+                <button class="stab" data-st="historical">historical</button>
+                <button class="stab" data-st="done">done</button>
               </div>
               <div id="agent-delivery-list" class="list deliveries-list">
                 <div class="muted" style="padding:12px">从左侧选择 agent 查看积压</div>
@@ -291,14 +297,17 @@
               <span class="muted">本控制台的 claim / done / requeue / seed 等变更记录</span>
             </div>
             <div id="audit-path" class="muted" style="padding:0 16px 8px"></div>
-            <pre id="audit-out" class="codeblock">加载中…</pre>
+            <div id="audit-timeline" class="audit-timeline"></div>
+            <pre id="audit-out" class="codeblock hidden">加载中…</pre>
+            <button type="button" class="btn ghost" id="audit-show-raw" style="margin:8px 16px">显示原始 JSON</button>
           </div>
 
           <div id="system-panel-health" class="system-panel hidden">
             <div class="pane-head">
               <h2>Health</h2>
-              <span class="muted">服务版本 · adapter · Event Log 就绪状态</span>
+              <span class="muted">服务版本 · adapter · 只读模式 · 数据新鲜度</span>
             </div>
+            <div id="health-cards" class="cards"></div>
             <pre id="health-out" class="codeblock">加载中…</pre>
           </div>
         </section>

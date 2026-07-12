@@ -30,8 +30,8 @@ npm run web
 
 | 角色 | 机器 | 用法 |
 |------|------|------|
-| **权威 (authority)** | **Mac Mini**（Event Log 本机路径） | 可 claim / done / requeue；**不要**设 `A2AX_READONLY` |
-| **镜像 (mirror)** | 开发本机 rsync 副本 | **只读巡检**：`A2AX_READONLY=1` 或 `npm run web:ro` |
+| **权威 (authority)** | **Mac Mini**（Event Log 本机路径） | `A2AX_AUTHORITY=1 npm run web`（或 `npm run web:authority`） |
+| **镜像 (mirror)** | 开发本机 rsync 副本 | **默认只读**（live 数据自动 readonly）；也可 `npm run web:ro` |
 
 生产目录在 **Mac Mini**（示例）：
 
@@ -51,10 +51,11 @@ Agent（OpenClaw / Claude Code）**已直接**消费该 Event Log；指挥台是
 ./scripts/sync-event-log.sh   # 或 npm run sync:log
 
 export A2A_LOG_HOME="$HOME/.openclaw/workspace/state/a2a-log"
-npm run web:ro                # A2AX_READONLY=1 — 禁止 claim/done
+npm run web                   # live 数据默认只读（无需手写 A2AX_READONLY）
+# 或显式: npm run web:ro
 ```
 
-只读下仍允许 **`POST /api/data/sync`** 刷新镜像。
+只读下仍允许 **`POST /api/data/sync`** 刷新镜像。看板会显示 **同步龄 / 是否过期**。
 
 ### 方式 B — 控制台同步
 
@@ -66,8 +67,9 @@ npm run web:ro                # A2AX_READONLY=1 — 禁止 claim/done
 
 ```bash
 # 在 Mac Mini 上 clone 本仓库，指向本机 a2a-log（默认路径即可）
-unset A2AX_READONLY
+export A2AX_AUTHORITY=1
 npm run web
+# 或: npm run web:authority
 # → 对人：可操作；对 agent：继续走既有 Event Log 协议
 ```
 
@@ -90,7 +92,9 @@ npm run web
 | `A2A_LOG_CLI` | a2a-log.py 路径 |
 | `A2AX_HOST` / `A2AX_PORT` | 绑定（默认 127.0.0.1:8787） |
 | `A2AX_TOKEN` | 若设置，则 `/api/*` 需 `Authorization: Bearer` 或 `X-A2AX-Token` |
-| **`A2AX_READONLY`** | `1`/`true`：禁止 claim/done 等变更（镜像推荐）；仍可 sync |
+| **`A2AX_READONLY`** | `1` 强制只读；`0` 强制可写；**未设置且 live 数据 → 自动只读** |
+| **`A2AX_AUTHORITY`** | `1`：live 数据也可写（Mac Mini 权威机） |
+| `A2AX_STALE_HOURS` | 同步/数据过期阈值阈值（默认 24） |
 | `A2AX_SYNC_REMOTE` | rsync 源（默认 macmini-ts 生产路径） |
 | `A2AX_AUDIT_PATH` | ops audit JSONL |
 
@@ -117,4 +121,5 @@ curl -s 'http://127.0.0.1:8787/api/interactions?limit=5' | python3 -c "import sy
 - **v1.0.0**：主线可演示 + 真数据同步/指向 + 操作闭环 + 传递过程可视化  
 - **v1.1**：去掉 MCP；Agent 侧继续走既有 Event Log 协议（非 Skill 强制）  
 - **v1.2**：`A2AX_READONLY` 只读模式 + 权威/镜像分工文档  
-- 后续：Mac Mini 常驻部署；Skill 推广仍延后
+- **v1.3**：live 默认只读、同步新鲜度、blocked/escalated/historical 看板、系统页可读化、CI  
+- 后续：Mac Mini 常驻部署（可选）；Skill 推广仍延后

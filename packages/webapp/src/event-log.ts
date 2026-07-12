@@ -88,6 +88,7 @@ export function eventLogPaths(repoRoot: string) {
     dataMode: jsonlCount > 0 || (fs.existsSync(db) && fileSize(db) > 500_000)
       ? ("live" as const)
       : ("empty_or_demo" as const),
+    syncStatePath: path.join(home, ".a2ax-sync-state.json"),
   };
 }
 
@@ -97,6 +98,157 @@ function fileSize(p: string): number {
   } catch {
     return 0;
   }
+}
+
+function fileMtimeMs(p: string): number | null {
+  try {
+    return fs.statSync(p).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+export type SyncState = {
+  last_sync_at?: string;
+  remote?: string;
+  ok?: boolean;
+  db_size?: number;
+  db_mtime_ms?: number | null;
+  jsonl_count?: number;
+};
+
+export function readSyncState(repoRoot: string): SyncState | null {
+  const p = eventLogPaths(repoRoot);
+  try {
+    if (!fs.existsSync(p.syncStatePath)) return null;
+    return JSON.parse(fs.readFileSync(p.syncStatePath, "utf8")) as SyncState;
+  } catch {
+    return null;
+  }
+}
+
+export function writeSyncState(repoRoot: string, state: SyncState): void {
+  const p = eventLogPaths(repoRoot);
+  try {
+    fs.mkdirSync(p.home, { recursive: true });
+    fs.writeFileSync(p.syncStatePath, JSON.stringify(state, null, 2), "utf8");
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Freshness of local Event Log mirror (sync record + file mtimes). */
+export function dataFreshness(repoRoot: string): Record<string, unknown> {
+  const p = eventLogPaths(repoRoot);
+  const sync = readSyncState(repoRoot);
+  const dbMtime = p.dbExists ? fileMtimeMs(p.db) : null;
+  const dbAgeH =
+    dbMtime != null ? (Date.now() - dbMtime) / 3_600_000 : null;
+  let newestJsonl: number | null = null;
+  if (p.eventsDirExists) {
+    try {
+      for (const f of fs.readdirSync(p.eventsDir)) {
+        if (!f.endsWith(".jsonl")) continue;
+        const m = fileMtimeMs(path.join(p.eventsDir, f));
+        if (m != null && (newestJsonl == null || m > newestJsonl)) newestJsonl = m;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  const jsonlAgeH =
+    newestJsonl != null ? (Date.now() - newestJsonl) / 3_600_000 : null;
+  const syncAgeH = sync?.last_sync_at
+    ? (Date.now() - Date.parse(sync.last_sync_at)) / 3_600_000
+    : null;
+  const staleThresholdH = Number(process.env.A2AX_STALE_HOURS || 24);
+  const stale =
+    p.dataMode === "live" &&
+    ((syncAgeH != null && syncAgeH > staleThresholdH) ||
+      (syncAgeH == null && dbAgeH != null && dbAgeH > staleThresholdH));
+  return {
+    dataMode: p.dataMode,
+    last_sync_at: sync?.last_sync_at ?? null,
+    last_sync_ok: sync?.ok ?? null,
+    last_sync_remote: sync?.remote ?? null,
+    sync_age_hours: syncAgeH != null ? Math.round(syncAgeH * 10) / 10 : null,
+    db_mtime: dbMtime != null ? new Date(dbMtime).toISOString() : null,
+    db_age_hours: dbAgeH != null ? Math.round(dbAgeH * 10) / 10 : null,
+    db_size_bytes: p.dbExists ? fileSize(p.db) : null,
+    jsonl_newest_mtime:
+      newestJsonl != null ? new Date(newestJsonl).toISOString() : null,
+    jsonl_age_hours: jsonlAgeH != null ? Math.round(jsonlAgeH * 10) / 10 : null,
+    stale_threshold_hours: staleThresholdH,
+    stale: Boolean(stale),
+  };
+}
+
+/**
+ * Live Event Log without A2AX_AUTHORITY → default readonly (laptop mirror safe).
+ * A2AX_READONLY=0|false forces write; A2AX_AUTHORITY=1 enables write on live data.
+ */
+export function resolveReadonlyMode(repoRoot: string): {
+  readonly: boolean;
+  reason: string;
+  authority: boolean;
+  dataMode: string;
+} {
+  const p = eventLogPaths(repoRoot);
+  const flag = (name: string) => {
+    const v = (process.env[name] || "").trim().toLowerCase();
+    return v === "1" || v === "true" || v === "yes" || v === "on";
+  };
+  const rawRo = (process.env.A2AX_READONLY || "").trim().toLowerCase();
+  const explicitRo =
+    rawRo !== "" &&
+    (rawRo === "0" ||
+      rawRo === "false" ||
+      rawRo === "no" ||
+      rawRo === "off" ||
+      flag("A2AX_READONLY"));
+  const forceWrite =
+    rawRo === "0" || rawRo === "false" || rawRo === "no" || rawRo === "off";
+  const authority = flag("A2AX_AUTHORITY");
+
+  if (forceWrite) {
+    return {
+      readonly: false,
+      reason: "A2AX_READONLY=0",
+      authority: true,
+      dataMode: p.dataMode,
+    };
+  }
+  if (flag("A2AX_READONLY")) {
+    return {
+      readonly: true,
+      reason: "A2AX_READONLY",
+      authority: false,
+      dataMode: p.dataMode,
+    };
+  }
+  if (authority) {
+    return {
+      readonly: false,
+      reason: "A2AX_AUTHORITY",
+      authority: true,
+      dataMode: p.dataMode,
+    };
+  }
+  if (p.dataMode === "live") {
+    return {
+      readonly: true,
+      reason: "auto:live-data-without-A2AX_AUTHORITY",
+      authority: false,
+      dataMode: p.dataMode,
+    };
+  }
+  void explicitRo;
+  return {
+    readonly: false,
+    reason: "default-empty-or-demo",
+    authority: true,
+    dataMode: p.dataMode,
+  };
 }
 
 /** rsync Event Log from remote host (default macmini-ts production path). */
@@ -124,6 +276,26 @@ export async function syncEventLogFromRemote(
   ];
   const r = await runCmd("rsync", args, process.env, 600_000);
   const after = eventLogPaths(repoRoot);
+  const now = new Date().toISOString();
+  if (r.ok) {
+    writeSyncState(repoRoot, {
+      last_sync_at: now,
+      remote,
+      ok: true,
+      db_size: fileSize(after.db),
+      db_mtime_ms: fileMtimeMs(after.db),
+      jsonl_count: after.jsonlCount,
+    });
+  } else {
+    writeSyncState(repoRoot, {
+      last_sync_at: now,
+      remote,
+      ok: false,
+      db_size: fileSize(after.db),
+      db_mtime_ms: fileMtimeMs(after.db),
+      jsonl_count: after.jsonlCount,
+    });
+  }
   return {
     status: r.ok ? 200 : 500,
     body: {
@@ -133,6 +305,7 @@ export async function syncEventLogFromRemote(
       code: r.code,
       stderr: (r.stderr || "").slice(-2000),
       stdout: (r.stdout || "").slice(-500),
+      freshness: dataFreshness(repoRoot),
       after: {
         jsonlCount: after.jsonlCount,
         dbExists: after.dbExists,
@@ -581,12 +754,18 @@ export async function agentsBoard(repoRoot: string): Promise<{
     acked: number;
     done: number;
     dead: number;
+    cancelled?: number;
+    historical?: number;
+    blocked?: number;
+    escalated?: number;
     other: number;
     total_active: number;
+    total_attention?: number;
     oldest_pending_ts?: string | null;
     sample_pending: Array<Record<string, unknown>>;
   }>;
   totals: Record<string, number>;
+  freshness?: Record<string, unknown>;
   error?: string;
 }> {
   const p = eventLogPaths(repoRoot);
@@ -608,6 +787,9 @@ export async function agentsBoard(repoRoot: string): Promise<{
       done: 0,
       dead: 0,
       cancelled: 0,
+      historical: 0,
+      blocked: 0,
+      escalated: 0,
       other: 0,
     }) as Record<string, number>;
 
@@ -630,8 +812,13 @@ export async function agentsBoard(repoRoot: string): Promise<{
         acked: 0,
         done: 0,
         dead: 0,
+        cancelled: 0,
+        historical: 0,
+        blocked: 0,
+        escalated: 0,
         other: 0,
         total_active: 0,
+        total_attention: 0,
         oldest_pending_ts: null,
         sample_pending: [] as Array<Record<string, unknown>>,
       }));
@@ -642,6 +829,7 @@ export async function agentsBoard(repoRoot: string): Promise<{
       db_path: p.db,
       agents,
       totals: emptyTotals(),
+      freshness: dataFreshness(repoRoot),
       error: "sqlite missing — board shows registry only",
     };
   }
@@ -770,7 +958,12 @@ print(json.dumps({"by": by, "oldest": oldest, "samples": samples}))
     const acked = counts.acked || 0;
     const done = counts.done || 0;
     const dead = counts.dead || 0;
+    const cancelled = counts.cancelled || 0;
+    const historical = counts.historical || 0;
+    const blocked = counts.blocked || 0;
+    const escalated = counts.escalated || 0;
     const total_active = pending + claimed + acked;
+    const total_attention = total_active + dead + blocked + escalated;
     for (const k of Object.keys(totals)) {
       totals[k] = (totals[k] || 0) + (counts[k] || 0);
     }
@@ -790,8 +983,13 @@ print(json.dumps({"by": by, "oldest": oldest, "samples": samples}))
       acked,
       done,
       dead,
+      cancelled,
+      historical,
+      blocked,
+      escalated,
       other,
       total_active,
+      total_attention,
       oldest_pending_ts: parsed.oldest?.[agent_id] ?? null,
       sample_pending: parsed.samples?.[agent_id] || [],
     };
@@ -799,6 +997,9 @@ print(json.dumps({"by": by, "oldest": oldest, "samples": samples}))
 
   // sort: most active first, then registry order-ish by pending
   agents.sort((a, b) => {
+    if (b.total_attention !== a.total_attention) {
+      return b.total_attention - a.total_attention;
+    }
     if (b.total_active !== a.total_active) return b.total_active - a.total_active;
     if (b.pending !== a.pending) return b.pending - a.pending;
     return a.agent_id.localeCompare(b.agent_id);
@@ -811,6 +1012,7 @@ print(json.dumps({"by": by, "oldest": oldest, "samples": samples}))
     db_path: p.db,
     agents,
     totals,
+    freshness: dataFreshness(repoRoot),
   };
 }
 
@@ -1286,7 +1488,9 @@ out = {
   "events": q("select count(*) from events")[0][0],
   "deliveries": q("select count(*) from deliveries")[0][0],
   "by_status": {r[0]: r[1] for r in q("select status, count(*) from deliveries group by status")},
-  "by_agent": [{"agent": r[0], "status": r[1], "n": r[2]} for r in q("select to_agent, status, count(*) from deliveries group by to_agent, status")],
+  "by_agent_top": [{"agent": r[0], "status": r[1], "n": r[2]} for r in q(
+    "select to_agent, status, count(*) as n from deliveries where status in ('pending','claimed','acked','dead','blocked','escalated') group by to_agent, status order by n desc limit 40"
+  )],
   "dead_letters": q("select count(*) from dead_letters")[0][0],
 }
 print(json.dumps(out))
@@ -1307,6 +1511,7 @@ print(json.dumps(out))
       events_dir: p.eventsDir,
       v1_script: p.v1,
       v2_script: p.v2,
+      sync_state: p.syncStatePath,
     },
     exists: {
       home: p.homeExists,
@@ -1318,6 +1523,7 @@ print(json.dumps(out))
     jsonl_files: jsonlFiles,
     jsonl_count: jsonlFiles.length,
     sqlite,
+    freshness: dataFreshness(repoRoot),
     write_path_note:
       "Canonical writes go through a2a-log.py → events/<from>.jsonl (+ optional v2 dual-write). Claims only exist in sqlite deliveries.",
   };

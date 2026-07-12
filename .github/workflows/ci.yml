@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Build
+        run: npm run build
+
+      - name: Start server (demo path, no live mirror)
+        env:
+          A2A_LOG_HOME: ${{ runner.temp }}/a2a-log-empty
+          A2AX_PORT: "8787"
+          A2AX_HOST: "127.0.0.1"
+        run: |
+          mkdir -p "$A2A_LOG_HOME/db"
+          node packages/webapp/dist/server.js &
+          echo $! > /tmp/a2ax.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8787/api/health >/dev/null; then
+              echo "server up"
+              break
+            fi
+            sleep 0.5
+          done
+          curl -sf http://127.0.0.1:8787/api/health | head -c 200
+          curl -sf http://127.0.0.1:8787/api/agents/board | head -c 200
+          curl -sf http://127.0.0.1:8787/api/meta | head -c 200
+          # empty home → not live → mutations allowed; health ok
+          bash scripts/smoke.sh
+          kill $(cat /tmp/a2ax.pid) || true

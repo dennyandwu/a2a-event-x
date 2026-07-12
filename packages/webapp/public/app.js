@@ -73,10 +73,12 @@ function ensureReadonlyBanner() {
     const main = document.querySelector(".main");
     if (main) main.insertBefore(el, main.firstChild);
   }
+  const reason = appMeta?.readonly_reason || "";
   el.innerHTML =
-    `<strong>只读模式</strong> · 本机为 Event Log 镜像/副本，claim / done / requeue 等已禁用。` +
-    ` 同步仍可用。权威操作请在 <b>Mac Mini</b> 运行控制台（勿设 A2AX_READONLY）。` +
-    (appMeta?.dataMode ? ` · dataMode=${escapeHtml(appMeta.dataMode)}` : "");
+    `<strong>只读模式</strong> · claim / done / requeue 已禁用（同步仍可用）。` +
+    ` 权威可写：Mac Mini 上 <code>A2AX_AUTHORITY=1</code>。` +
+    (reason ? ` · <span class="muted">${escapeHtml(reason)}</span>` : "") +
+    (appMeta?.dataMode ? ` · data=${escapeHtml(appMeta.dataMode)}` : "");
 }
 
 async function loadAppMeta() {
@@ -254,15 +256,35 @@ function renderBoard() {
   const q = ($("#agent-filter")?.value || "").trim().toLowerCase();
   const sort = $("#agent-sort")?.value || "active";
   const t = boardData.totals || {};
+  const fr = boardData.freshness || appMeta?.freshness || {};
   const autoOn = $("#auto-refresh")?.checked;
   $("#board-totals").innerHTML =
     (autoOn ? `<span class="pulse-dot" title="auto-refresh"></span>` : "") +
-    `Σ pending ${t.pending || 0} · claimed ${t.claimed || 0} · acked ${t.acked || 0} · dead ${t.dead || 0}` +
+    `Σ p${t.pending || 0} · c${t.claimed || 0} · a${t.acked || 0}` +
+    ` · blk${t.blocked || 0} · esc${t.escalated || 0} · ☠${t.dead || 0}` +
+    ` · hist${t.historical || 0} · ✓${t.done || 0}` +
     (boardData.db_ok ? "" : " · DB missing");
   if ($("#board-updated")) {
     $("#board-updated").innerHTML = lastBoardAt
       ? `更新于 ${escapeHtml(fmtTime(lastBoardAt))} · <span class="kbd">r</span> 刷新`
       : "";
+  }
+  const fb = $("#freshness-banner");
+  if (fb) {
+    if (fr && (fr.last_sync_at || fr.db_age_hours != null || fr.stale)) {
+      fb.classList.remove("hidden");
+      fb.className =
+        "banner " + (fr.stale ? "stale-warn" : "muted");
+      const parts = [];
+      if (fr.last_sync_at) parts.push(`上次同步 ${escapeHtml(String(fr.last_sync_at))}`);
+      else parts.push("无同步记录（CLI sync 或控制台同步后会写入）");
+      if (fr.sync_age_hours != null) parts.push(`同步龄 ${fr.sync_age_hours}h`);
+      if (fr.db_age_hours != null) parts.push(`sqlite mtime 龄 ${fr.db_age_hours}h`);
+      if (fr.stale) parts.push("⚠ 可能过期 — 建议 npm run sync:log");
+      fb.innerHTML = parts.join(" · ");
+    } else {
+      fb.classList.add("hidden");
+    }
   }
 
   if (boardData.error) {
@@ -271,7 +293,16 @@ function renderBoard() {
   }
 
   let agents = boardData.agents || [];
-  if (hideIdle) agents = agents.filter((a) => a.total_active > 0 || a.dead > 0);
+  if (hideIdle) {
+    agents = agents.filter(
+      (a) =>
+        (a.total_attention || 0) > 0 ||
+        (a.total_active || 0) > 0 ||
+        (a.dead || 0) > 0 ||
+        (a.blocked || 0) > 0 ||
+        (a.escalated || 0) > 0,
+    );
+  }
   if (hideReserved) agents = agents.filter((a) => !a.reserved);
   if (q) {
     agents = agents.filter(
@@ -286,8 +317,11 @@ function renderBoard() {
     if (sort === "name") return a.agent_id.localeCompare(b.agent_id);
     if (sort === "pending") return (b.pending || 0) - (a.pending || 0) || a.agent_id.localeCompare(b.agent_id);
     if (sort === "dead") return (b.dead || 0) - (a.dead || 0) || a.agent_id.localeCompare(b.agent_id);
-    // active default
-    if (b.total_active !== a.total_active) return b.total_active - a.total_active;
+    if (sort === "blocked") return (b.blocked || 0) - (a.blocked || 0) || a.agent_id.localeCompare(b.agent_id);
+    // attention default
+    const ba = b.total_attention ?? b.total_active ?? 0;
+    const aa = a.total_attention ?? a.total_active ?? 0;
+    if (ba !== aa) return ba - aa;
     if (b.pending !== a.pending) return b.pending - a.pending;
     return a.agent_id.localeCompare(b.agent_id);
   });
@@ -295,7 +329,13 @@ function renderBoard() {
   const el = $("#agent-board");
   el.innerHTML = "";
   const tAll =
-    (t.pending || 0) + (t.claimed || 0) + (t.acked || 0) + (t.dead || 0) + (t.done || 0);
+    (t.pending || 0) +
+    (t.claimed || 0) +
+    (t.acked || 0) +
+    (t.dead || 0) +
+    (t.blocked || 0) +
+    (t.escalated || 0) +
+    (t.done || 0);
   if (!agents.length) {
     const noWork = tAll === 0;
     el.innerHTML = noWork
@@ -338,7 +378,8 @@ function renderBoard() {
     const card = document.createElement("div");
     card.className =
       "agent-card" +
-      (a.total_active > 0 || a.dead > 0 ? " has-work" : "") +
+      ((a.total_attention || a.total_active || 0) > 0 || a.dead > 0 ? " has-work" : "") +
+      (a.blocked || a.escalated ? " has-attention" : "") +
       (selectedAgentId === a.agent_id ? " active" : "");
     // reuse .item.active border via custom
     if (selectedAgentId === a.agent_id) {
@@ -350,8 +391,11 @@ function renderBoard() {
     if (a.pending) pills.push(`<span class="stat pending">pending ${a.pending}</span>`);
     if (a.claimed) pills.push(`<span class="stat claimed">claimed ${a.claimed}</span>`);
     if (a.acked) pills.push(`<span class="stat acked">acked ${a.acked}</span>`);
+    if (a.blocked) pills.push(`<span class="stat blocked">blocked ${a.blocked}</span>`);
+    if (a.escalated) pills.push(`<span class="stat escalated">escalated ${a.escalated}</span>`);
     if (a.dead) pills.push(`<span class="stat dead">dead ${a.dead}</span>`);
-    if (a.done) pills.push(`<span class="stat">done ${a.done}</span>`);
+    if (a.historical) pills.push(`<span class="stat historical">hist ${a.historical}</span>`);
+    if (a.done) pills.push(`<span class="stat done">done ${a.done}</span>`);
     if (!pills.length) pills.push(`<span class="stat">idle</span>`);
 
     const samples = (a.sample_pending || [])
@@ -456,7 +500,7 @@ async function selectAgent(agentId) {
 }
 
 function statusQueryForFilter(filter) {
-  if (filter === "active") return "pending,claimed,acked";
+  if (filter === "active") return "pending,claimed,acked,blocked,escalated";
   return filter;
 }
 
@@ -464,7 +508,9 @@ async function loadAgentDetail(agentId, reloadList) {
   const meta = (boardData?.agents || []).find((a) => a.agent_id === agentId);
   $("#agent-detail-meta").textContent = meta
     ? [meta.host, meta.access, meta.sla, meta.notes].filter(Boolean).join(" · ") +
-      ` · p${meta.pending}/c${meta.claimed}/a${meta.acked}/d${meta.dead}`
+      ` · p${meta.pending}/c${meta.claimed}/a${meta.acked}` +
+      `/blk${meta.blocked || 0}/esc${meta.escalated || 0}/☠${meta.dead}` +
+      `/h${meta.historical || 0}/✓${meta.done || 0}`
     : "";
 
   if (meta?.pending > 0) {
@@ -640,9 +686,38 @@ async function compensateExecute() {
 async function loadAudit() {
   try {
     const data = await api("/api/ops/audit?limit=80");
-    $("#audit-path").textContent = `${data.path || ""} · total ${data.count ?? 0} lines`;
-    $("#audit-out").textContent = JSON.stringify(data.entries || [], null, 2);
+    const entries = data.entries || [];
+    $("#audit-path").textContent = `${data.path || ""} · total ${data.count ?? 0} lines · showing ${entries.length}`;
+    const tl = $("#audit-timeline");
+    if (tl) {
+      if (!entries.length) {
+        tl.innerHTML = `<div class="muted" style="padding:12px">暂无操作审计（claim/done/sync 后会出现）</div>`;
+      } else {
+        tl.innerHTML = entries
+          .map((e) => {
+            const ok = e.ok !== false;
+            const detail = e.detail
+              ? escapeHtml(
+                  typeof e.detail === "string"
+                    ? e.detail
+                    : JSON.stringify(e.detail).slice(0, 180),
+                )
+              : "";
+            return `<div class="audit-row ${ok ? "ok" : "err"}">
+              <div class="ar-op">${escapeHtml(e.op || "?")}${e.agent ? ` · <b>${escapeHtml(e.agent)}</b>` : ""}</div>
+              <div class="ar-meta">${escapeHtml(e.ts || "")}${e.duration_ms != null ? ` · ${e.duration_ms}ms` : ""} · ${ok ? "ok" : "fail"}</div>
+              ${detail ? `<div class="ar-detail">${detail}</div>` : ""}
+              ${e.error ? `<div class="ar-detail err">${escapeHtml(String(e.error))}</div>` : ""}
+            </div>`;
+          })
+          .join("");
+      }
+    }
+    const raw = $("#audit-out");
+    if (raw) raw.textContent = JSON.stringify(entries, null, 2);
   } catch (e) {
+    const tl = $("#audit-timeline");
+    if (tl) tl.innerHTML = `<div class="muted">${escapeHtml(String(e.message || e))}</div>`;
     $("#audit-out").textContent = String(e.message || e);
   }
 }
@@ -1638,15 +1713,24 @@ async function loadPaths() {
   const ex = data.exists || {};
   const paths = data.paths || {};
   const sql = data.sqlite || {};
+  const fr = data.freshness || {};
   const nJsonl = data.jsonl_count ?? 0;
   const nEv = sql.events || 0;
   const isLive = nJsonl > 0 || nEv > 100;
+  const by = sql.by_status || {};
   const banner = $("#data-mode-banner");
   if (banner) {
-    banner.className = "banner " + (isLive ? "ok-ish" : "muted");
+    banner.className =
+      "banner " + (fr.stale ? "stale-warn" : isLive ? "ok-ish" : "muted");
+    const frLine = fr.last_sync_at
+      ? `上次同步 ${fr.last_sync_at}${fr.sync_age_hours != null ? ` (${fr.sync_age_hours}h 前)` : ""}`
+      : "尚无同步时间戳";
     banner.textContent = isLive
-      ? `数据源：生产/实库 · JSONL ${nJsonl} · sqlite events ${nEv} · deliveries ${sql.deliveries ?? 0} · pending ${sql.by_status?.pending ?? "?"} · dead ${sql.by_status?.dead ?? "?"}`
-      : `数据源：空或仅 demo · JSONL ${nJsonl} · sqlite events ${nEv}。可「从 Mac Mini 同步真数据」或加载演示数据。`;
+      ? `数据源：生产/实库 · JSONL ${nJsonl} · events ${nEv} · del ${sql.deliveries ?? 0}` +
+        ` · p${by.pending ?? 0}/blk${by.blocked ?? 0}/☠${by.dead ?? 0}/hist${by.historical ?? 0}` +
+        ` · ${frLine}${fr.stale ? " · ⚠ 可能过期" : ""}` +
+        (isReadonly() ? " · 只读" : " · 可写")
+      : `数据源：空或仅 demo · JSONL ${nJsonl} · events ${nEv}。可同步真数据或加载演示。`;
   }
   $("#paths-cards").innerHTML = [
     card("A2A_LOG_HOME", paths.A2A_LOG_HOME, ex.home),
@@ -1655,6 +1739,15 @@ async function loadPaths() {
       "a2a-v2.sqlite",
       sql.ok ? `${sql.events} events · ${sql.deliveries} deliveries` : "missing",
       ex.db && sql.ok,
+    ),
+    card(
+      "新鲜度",
+      fr.stale
+        ? `过期 · sync ${fr.sync_age_hours ?? "?"}h`
+        : fr.last_sync_at
+          ? `ok · ${fr.sync_age_hours ?? "?"}h`
+          : `db 龄 ${fr.db_age_hours ?? "?"}h`,
+      !fr.stale && isLive,
     ),
     card("a2a-log.py", paths.A2A_LOG_CLI, ex.v1_script),
   ].join("");
@@ -1730,6 +1823,43 @@ function card(title, val, ok) {
 async function loadHealth() {
   try {
     const [health, meta] = await Promise.all([api("/api/health"), api("/api/meta")]);
+    appMeta = { ...meta, ...health, readonly: health.readonly ?? meta.readonly };
+    ensureReadonlyBanner();
+    const fr = health.freshness || meta.freshness || {};
+    const el = health.eventLog || {};
+    const sql = el.sqlite || {};
+    const adapters = health.adapters || [];
+    const cards = $("#health-cards");
+    if (cards) {
+      cards.innerHTML = [
+        card("版本", health.version || meta.version || "?", true),
+        card(
+          "模式",
+          health.readonly ? `只读 · ${health.readonly_reason || ""}` : "可写 · authority",
+          !health.readonly,
+        ),
+        card(
+          "数据",
+          `${health.dataMode || "?"} · events ${sql.events ?? "?"} · del ${sql.deliveries ?? "?"}`,
+          health.dataMode === "live" || (sql.events || 0) > 0,
+        ),
+        card(
+          "新鲜度",
+          fr.stale
+            ? `过期 ${fr.sync_age_hours ?? fr.db_age_hours ?? "?"}h`
+            : fr.last_sync_at
+              ? `sync ${fr.sync_age_hours ?? "?"}h 前`
+              : `db 龄 ${fr.db_age_hours ?? "—"}h`,
+          !fr.stale,
+        ),
+        card(
+          "Adapters",
+          adapters.filter((a) => a.ok).length + "/" + adapters.length + " ok",
+          adapters.every((a) => a.ok),
+        ),
+        card("Agent 接入", health.agentAccess || meta.agentAccess || "event-log-protocol", true),
+      ].join("");
+    }
     $("#health-out").textContent = JSON.stringify({ meta, health }, null, 2);
   } catch (e) {
     $("#health-out").textContent = String(e.message || e);
@@ -1773,6 +1903,14 @@ $("#refresh-system")?.addEventListener("click", () => refreshSystem());
 $("#btn-data-sync")?.addEventListener("click", () => syncProdData());
 $("#btn-data-backfill")?.addEventListener("click", () => backfillData());
 $("#btn-data-refresh")?.addEventListener("click", () => loadPaths());
+$("#audit-show-raw")?.addEventListener("click", () => {
+  const raw = $("#audit-out");
+  if (!raw) return;
+  raw.classList.toggle("hidden");
+  $("#audit-show-raw").textContent = raw.classList.contains("hidden")
+    ? "显示原始 JSON"
+    : "隐藏原始 JSON";
+});
 $$("#system-subnav .nav-sub-item").forEach((b) => {
   b.addEventListener("click", (e) => {
     e.stopPropagation();
