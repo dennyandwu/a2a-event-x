@@ -1,21 +1,14 @@
-# Skills (agent-facing)
+# Skills (deferred)
 
-This project **does not ship MCP**. Agents learn surfaces via skills + CLI.
+This project **does not ship MCP**.
 
-| Skill | Audience | Purpose |
-|-------|----------|---------|
-| [`a2a-consumer`](./a2a-consumer/SKILL.md) | **All bus agents** | inbox → claim → ack/done on Event Log |
-| [`session-hub`](./session-hub/SKILL.md) | Coding assistants | Local CLI session history (context only) |
+**Status (locked):** Skill packaging is **deferred** until the human Event X console is fully landed.
 
-## Install into an agent workspace
+Production **OpenClaw + Claude Code agents already follow** the A2A Event Log interaction protocol (CLI / hooks / watchers). Do **not** treat these skills as a rollout blocker or re-onboard those agents for Skill’s sake.
 
-Copy or symlink into the agent’s skill directory, e.g.:
+| Skill | Purpose | When |
+|-------|---------|------|
+| [`a2a-consumer`](./a2a-consumer/SKILL.md) | Draft: inbox → claim → done | Later / new agents only |
+| [`session-hub`](./session-hub/SKILL.md) | Local coding session history | Optional context |
 
-```bash
-# Claude Code project / user skills (paths vary by setup)
-ln -sf /path/to/a2a-event-x/skills/a2a-consumer ~/.claude/skills/a2a-consumer
-
-# Or paste SKILL.md content into agent MEMORY / AGENTS.md with a short pointer
-```
-
-OpenClaw agents: add a short pointer in agent instructions to run the consumer loop with their `agent_id`.
+Draft files may stay in-repo for future onboarding; they are **not** the current integration path.
